@@ -7,6 +7,7 @@ from models.schemas import (
     UpdateWorkflowRequest
 )
 from agent.flowgent_agent import chat_with_agent
+from agent.context import set_n8n_credentials, clear_n8n_credentials
 from n8n_mcp.n8n_client import get_mcp_client
 from n8n_mcp.direct_client import create_n8n_client
 
@@ -30,16 +31,21 @@ async def chat(message: ChatMessage):
         if message.context and "session_id" in message.context:
             session_id = message.context["session_id"]
         
-        # Store n8n config in context for agent to use
-        context = message.context or {}
-        if message.n8n_config:
-            context["n8n_instance_url"] = message.n8n_config.instance_url
-            context["n8n_api_key"] = message.n8n_config.api_key
-            logger.info(f"n8n config provided: {message.n8n_config.instance_url}")
-            
-        response_text = await chat_with_agent(message.message, session_id)
-        logger.info(f"Chat response generated: {len(response_text)} chars")
-        return ChatResponse(response=response_text, workflow_data=None, action=None)
+        # Set n8n credentials in agent context for this request
+        if message.n8n_config and message.n8n_config.instance_url and message.n8n_config.api_key:
+            set_n8n_credentials(
+                instance_url=message.n8n_config.instance_url,
+                api_key=message.n8n_config.api_key
+            )
+            logger.info(f"n8n credentials set for agent: {message.n8n_config.instance_url}")
+        
+        try:
+            response_text = await chat_with_agent(message.message, session_id)
+            logger.info(f"Chat response generated: {len(response_text)} chars")
+            return ChatResponse(response=response_text, workflow_data=None, action=None)
+        finally:
+            # Clear credentials after request
+            clear_n8n_credentials()
     except Exception as e:
         logger.error(f"Chat error: {e}", exc_info=True)
         return ChatResponse(response=f"I apologize, but I encountered an error: {str(e)}. Please try again or rephrase your question.")
