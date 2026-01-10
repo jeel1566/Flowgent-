@@ -1,4 +1,4 @@
-"""n8n MCP Client using HTTP POST-based MCP protocol (JSON-RPC)."""
+"""n8n MCP Client using HTTP POST-based MCP protocol with session management."""
 import os
 import json
 import logging
@@ -9,29 +9,32 @@ logger = logging.getLogger(__name__)
 
 
 class N8nMcpClient:
-    """n8n MCP Client using HTTP POST JSON-RPC protocol."""
+    """n8n MCP Client with proper session ID management."""
     
     def __init__(self):
         self.mcp_url = os.getenv("N8N_MCP_URL", "https://api.n8n-mcp.com/mcp")
         self.api_key = os.getenv("N8N_MCP_API_KEY", "")
-        self.headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-            "Accept": "application/json, text/event-stream"
-        }
         self._client: Optional[httpx.AsyncClient] = None
         self._request_id = 0
         self._initialized = False
+        self._session_id: Optional[str] = None  # MCP session ID from server
     
     def _get_client(self) -> httpx.AsyncClient:
         """Get or create HTTP client."""
         if self._client is None or self._client.is_closed:
-            self._client = httpx.AsyncClient(
-                headers=self.headers,
-                timeout=60.0,
-                follow_redirects=True
-            )
+            self._client = httpx.AsyncClient(timeout=60.0, follow_redirects=True)
         return self._client
+    
+    def _get_headers(self) -> Dict[str, str]:
+        """Get headers with session ID if available."""
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream"
+        }
+        if self._session_id:
+            headers["Mcp-Session-Id"] = self._session_id
+        return headers
     
     def _next_id(self) -> int:
         """Get next request ID."""
@@ -39,7 +42,7 @@ class N8nMcpClient:
         return self._request_id
 
     async def _call_mcp(self, method: str, params: Dict = None) -> Any:
-        """Make an MCP JSON-RPC call (handles SSE response format)."""
+        """Make an MCP JSON-RPC call with session management."""
         client = self._get_client()
         
         payload = {
@@ -49,11 +52,21 @@ class N8nMcpClient:
             "params": params or {}
         }
         
-        logger.info(f"MCP call: {method}")
+        logger.debug(f"MCP call: {method}")
         
         try:
-            response = await client.post(self.mcp_url, json=payload)
+            response = await client.post(
+                self.mcp_url, 
+                json=payload, 
+                headers=self._get_headers()
+            )
             response.raise_for_status()
+            
+            # Extract session ID from response headers
+            session_id = response.headers.get("Mcp-Session-Id") or response.headers.get("mcp-session-id")
+            if session_id:
+                self._session_id = session_id
+                logger.debug(f"Session ID updated: {session_id[:50]}...")
             
             # Parse SSE response format: "event: message\ndata: {...}\n"
             text = response.text.strip()
@@ -68,8 +81,7 @@ class N8nMcpClient:
                         break
             
             if result is None:
-                # Try parsing as regular JSON
-                result = response.json()
+                result = json.loads(text) if text else {}
             
             if "error" in result:
                 logger.error(f"MCP error: {result['error']}")
@@ -77,15 +89,15 @@ class N8nMcpClient:
             
             return result.get("result")
         except httpx.HTTPStatusError as e:
-            logger.error(f"HTTP error: {e.response.status_code} - {e.response.text}")
+            logger.error(f"HTTP {e.response.status_code}: {e.response.text[:200]}")
             raise
         except Exception as e:
             logger.error(f"MCP call failed: {e}")
             raise
 
     async def initialize(self) -> bool:
-        """Initialize the MCP connection."""
-        if self._initialized:
+        """Initialize the MCP connection and get session ID."""
+        if self._initialized and self._session_id:
             return True
         try:
             result = await self._call_mcp("initialize", {
@@ -94,7 +106,7 @@ class N8nMcpClient:
                 "clientInfo": {"name": "flowgent", "version": "2.0.0"}
             })
             self._initialized = True
-            logger.info(f"MCP initialized: {result}")
+            logger.info(f"MCP initialized. Session: {self._session_id[:30] if self._session_id else 'None'}...")
             return True
         except Exception as e:
             logger.error(f"MCP initialization failed: {e}")
@@ -129,7 +141,7 @@ class N8nMcpClient:
                 "arguments": arguments or {}
             })
             
-            # Parse content from result
+            # Parse content from MCP response
             if result and "content" in result:
                 contents = []
                 for item in result["content"]:
@@ -145,44 +157,54 @@ class N8nMcpClient:
             logger.error(f"Tool call failed ({tool_name}): {e}")
             raise
 
-    # ========== MCP Tool Wrappers ==========
+    # ========== Core MCP Tools ==========
 
-    async def search_nodes(self, query: str, source: str = None) -> Dict[str, Any]:
-        """Search n8n nodes using MCP."""
+    async def search_nodes(self, query: str, source: str = None, include_examples: bool = False) -> Dict[str, Any]:
+        """Search n8n nodes."""
         args = {"query": query}
         if source:
             args["source"] = source
+        if include_examples:
+            args["includeExamples"] = True
         return await self.call_tool("search_nodes", args)
 
-    async def get_node(self, node_type: str, mode: str = "docs") -> Dict[str, Any]:
-        """Get node information using MCP."""
+    async def get_node(self, node_type: str, mode: str = "docs", detail: str = "standard") -> Dict[str, Any]:
+        """Get node information."""
         return await self.call_tool("get_node", {
             "nodeType": node_type,
-            "mode": mode
+            "mode": mode,
+            "detail": detail
         })
 
     async def validate_workflow(self, workflow: Dict) -> Dict[str, Any]:
-        """Validate a workflow using MCP."""
+        """Validate a workflow."""
         return await self.call_tool("validate_workflow", {"workflow": workflow})
 
     async def search_templates(self, query: str = None, search_mode: str = "keyword") -> Dict[str, Any]:
-        """Search workflow templates using MCP."""
+        """Search workflow templates."""
         args = {"searchMode": search_mode}
         if query:
             args["query"] = query
         return await self.call_tool("search_templates", args)
 
     async def get_template(self, template_id: str, mode: str = "full") -> Dict[str, Any]:
-        """Get a workflow template using MCP."""
+        """Get a workflow template."""
         return await self.call_tool("get_template", {
             "templateId": template_id,
             "mode": mode
         })
 
-    # ========== Legacy Methods (For Compatibility) ==========
-    
+    async def get_tools_documentation(self, tool_name: str = None) -> Dict[str, Any]:
+        """Get documentation for MCP tools."""
+        args = {}
+        if tool_name:
+            args["toolName"] = tool_name
+        return await self.call_tool("tools_documentation", args)
+
+    # ========== n8n Management Tools (Require n8n API) ==========
+
     async def list_workflows(self) -> List[Dict[str, Any]]:
-        """List workflows - requires n8n API configuration in MCP."""
+        """List workflows from n8n instance."""
         try:
             result = await self.call_tool("n8n_list_workflows", {})
             if isinstance(result, dict) and "workflows" in result:
@@ -192,15 +214,18 @@ class N8nMcpClient:
             logger.warning(f"list_workflows failed: {e}")
             return []
 
-    async def get_workflow(self, workflow_id: str) -> Optional[Dict[str, Any]]:
-        """Get workflow by ID - requires n8n API configuration."""
+    async def get_workflow(self, workflow_id: str, mode: str = "full") -> Optional[Dict[str, Any]]:
+        """Get workflow by ID."""
         try:
-            return await self.call_tool("n8n_get_workflow", {"workflowId": workflow_id})
+            return await self.call_tool("n8n_get_workflow", {
+                "workflowId": workflow_id,
+                "mode": mode
+            })
         except Exception:
             return None
 
     async def create_workflow(self, name: str, nodes: List[Dict], connections: Dict) -> Dict[str, Any]:
-        """Create workflow - requires n8n API configuration."""
+        """Create a new workflow."""
         return await self.call_tool("n8n_create_workflow", {
             "name": name,
             "nodes": nodes,
@@ -208,21 +233,21 @@ class N8nMcpClient:
         })
 
     async def execute_workflow(self, workflow_id: str, input_data: Optional[Dict] = None) -> Dict[str, Any]:
-        """Execute workflow - requires n8n API configuration."""
+        """Execute/test a workflow."""
         args = {"workflowId": workflow_id}
         if input_data:
             args["data"] = input_data
         return await self.call_tool("n8n_test_workflow", args)
 
     async def get_node_info(self, node_type: str) -> Optional[Dict[str, Any]]:
-        """Get node info using MCP get_node tool."""
+        """Get node info (wrapper for get_node)."""
         try:
             return await self.get_node(node_type, mode="docs")
         except Exception:
             return None
 
     async def list_executions(self, workflow_id: Optional[str] = None) -> List[Dict[str, Any]]:
-        """List executions - requires n8n API configuration."""
+        """List execution history."""
         try:
             args = {"action": "list"}
             if workflow_id:
@@ -238,7 +263,7 @@ class N8nMcpClient:
             await self._client.aclose()
 
 
-# Singleton instance
+# Singleton instance with lock for thread safety
 _client: Optional[N8nMcpClient] = None
 
 

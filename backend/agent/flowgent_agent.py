@@ -14,10 +14,65 @@ from n8n_mcp.n8n_client import get_mcp_client
 
 logger = logging.getLogger(__name__)
 
-# ============= Tool Functions (Call MCP Client) =============
+# ============= Core MCP Tools (Work without n8n API) =============
+
+async def search_nodes(query: str) -> Dict[str, Any]:
+    """Search for n8n nodes by name or description. Use this to find nodes for workflows."""
+    try:
+        client = get_mcp_client()
+        result = await client.search_nodes(query)
+        return {"status": "success", "data": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+async def get_node_documentation(node_type: str) -> Dict[str, Any]:
+    """Get detailed documentation for a specific n8n node type (e.g., 'n8n-nodes-base.httpRequest')."""
+    try:
+        client = get_mcp_client()
+        result = await client.get_node(node_type, mode="docs", detail="full")
+        return {"status": "success", "data": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+async def search_workflow_templates(query: str) -> Dict[str, Any]:
+    """Search for workflow templates by keyword."""
+    try:
+        client = get_mcp_client()
+        result = await client.search_templates(query, search_mode="keyword")
+        return {"status": "success", "data": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+async def get_workflow_template(template_id: str) -> Dict[str, Any]:
+    """Get a specific workflow template by ID."""
+    try:
+        client = get_mcp_client()
+        result = await client.get_template(template_id, mode="full")
+        return {"status": "success", "data": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+async def validate_workflow_json(workflow_json: str) -> Dict[str, Any]:
+    """Validate a workflow JSON structure."""
+    try:
+        workflow = json.loads(workflow_json) if isinstance(workflow_json, str) else workflow_json
+        client = get_mcp_client()
+        result = await client.validate_workflow(workflow)
+        return {"status": "success", "data": result}
+    except json.JSONDecodeError as e:
+        return {"status": "error", "message": f"Invalid JSON: {str(e)}"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+# ============= n8n Management Tools (Require n8n API Config) =============
 
 async def list_workflows() -> Dict[str, Any]:
-    """Get all workflows from the n8n instance."""
+    """List all workflows from connected n8n instance."""
     try:
         client = get_mcp_client()
         workflows = await client.list_workflows()
@@ -31,7 +86,7 @@ async def list_workflows() -> Dict[str, Any]:
 
 
 async def get_workflow(workflow_id: str) -> Dict[str, Any]:
-    """Get a specific workflow by ID with full details."""
+    """Get a specific workflow by ID from connected n8n instance."""
     try:
         client = get_mcp_client()
         workflow = await client.get_workflow(workflow_id)
@@ -74,31 +129,28 @@ async def execute_workflow(workflow_id: str, input_data: Optional[str] = None) -
         return {"status": "error", "message": str(e)}
 
 
-async def get_node_info(node_type: str) -> Dict[str, Any]:
-    """Get detailed information about a specific n8n node type."""
-    try:
-        client = get_mcp_client()
-        info = await client.get_node_info(node_type)
-        if info:
-            return {"status": "success", "node_info": info}
-        return {
-            "status": "not_found",
-            "message": f"Node type {node_type} not found in MCP. Ask me about it and I'll provide general information."
-        }
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
-
-
-# ============= ADK Components =============
+# ============= ADK Agent =============
 
 def create_flowgent_agent() -> Agent:
-    """Create the Flowgent agent with n8n tools."""
+    """Create the Flowgent agent with all MCP tools."""
     return Agent(
         name="flowgent",
         model=AGENT_MODEL,
-        description="AI assistant for n8n workflow automation",
+        description="AI assistant for n8n workflow automation with MCP integration",
         instruction=SYSTEM_INSTRUCTION,
-        tools=[list_workflows, get_workflow, create_workflow, execute_workflow, get_node_info]
+        tools=[
+            # Core MCP tools (always work)
+            search_nodes,
+            get_node_documentation,
+            search_workflow_templates,
+            get_workflow_template,
+            validate_workflow_json,
+            # n8n management tools (need n8n API)
+            list_workflows,
+            get_workflow,
+            create_workflow,
+            execute_workflow,
+        ]
     )
 
 
