@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Flowgent
 
 **An AI-powered agentic assistant for n8n automation workflows**
@@ -53,3 +54,7 @@ Built for Agentic+ Product Hackathon by Team Flowgent
 ## 📄 License
 
 MIT
+=======
+# Flowgent-
+this is an agentic extension that help you with n8n automation by chating and information hand 
+>>>>>>> 9e9c7245784880f8436a9ec902d91805cb05ca4c
