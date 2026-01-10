@@ -1,260 +1,178 @@
-"""Flowgent AI Agent implementation using Google Agent SDK."""
 import os
-from typing import Optional, Dict, Any, List
-from google import genai
-from google.genai.types import Tool, GenerateContentConfig, Content, Part
+import json
+import logging
+from typing import Optional, Dict, Any
 
-from agent.config import AGENT_CONFIG, SYSTEM_INSTRUCTION, get_gemini_api_key
-from mcp.n8n_client import get_mcp_client
+# ADK imports
+from google.adk.agents import Agent
+from google.adk.runners import Runner
+from google.adk.sessions import InMemorySessionService
+from google.genai import types
+
+from agent.config import AGENT_MODEL, SYSTEM_INSTRUCTION, get_gemini_api_key
+from n8n_mcp.n8n_client import get_mcp_client
+
+logger = logging.getLogger(__name__)
+
+# ============= Tool Functions (Call MCP Client) =============
+
+async def list_workflows() -> Dict[str, Any]:
+    """Get all workflows from the n8n instance."""
+    try:
+        client = get_mcp_client()
+        workflows = await client.list_workflows()
+        return {
+            "status": "success",
+            "count": len(workflows),
+            "workflows": [{"id": w.get("id"), "name": w.get("name"), "active": w.get("active")} for w in workflows]
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
-class FlowgentAgent:
-    """AI Agent for n8n workflow assistance using Google Agent SDK."""
-    
-    def __init__(self):
-        """Initialize the Flowgent agent."""
-        self.api_key = get_gemini_api_key()
-        self.client = genai.Client(api_key=self.api_key)
-        self.mcp_client = get_mcp_client()
-        self.sessions: Dict[str, Any] = {}  # Store chat sessions
+async def get_workflow(workflow_id: str) -> Dict[str, Any]:
+    """Get a specific workflow by ID with full details."""
+    try:
+        client = get_mcp_client()
+        workflow = await client.get_workflow(workflow_id)
+        if workflow:
+            return {"status": "success", "workflow": workflow}
+        return {"status": "error", "message": f"Workflow {workflow_id} not found"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+async def create_workflow(name: str, description: str, nodes_json: str) -> Dict[str, Any]:
+    """Create a new n8n workflow from JSON definition."""
+    try:
+        nodes_data = json.loads(nodes_json) if isinstance(nodes_json, str) else nodes_json
+        nodes = nodes_data.get("nodes", [])
+        connections = nodes_data.get("connections", {})
         
-    def _create_mcp_tools(self) -> List[Tool]:
-        """Create MCP tools for the agent.
+        client = get_mcp_client()
+        result = await client.create_workflow(name, nodes, connections)
+        return {"status": "success", "workflow_id": result.get("id"), "name": name}
+    except json.JSONDecodeError as e:
+        return {"status": "error", "message": f"Invalid JSON: {str(e)}"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+async def execute_workflow(workflow_id: str, input_data: Optional[str] = None) -> Dict[str, Any]:
+    """Execute a workflow with optional input data."""
+    try:
+        parsed_input = None
+        if input_data:
+            parsed_input = json.loads(input_data) if isinstance(input_data, str) else input_data
         
-        Returns:
-            List of Tool definitions for n8n operations
-        """
-        # For now, we'll define tools manually
-        # In production, these would be dynamically loaded from MCP server
-        tools = [
-            Tool(
-                function_declarations=[
-                    {
-                        "name": "list_workflows",
-                        "description": "Get all workflows from the n8n instance",
-                        "parameters": {
-                            "type": "object",
-                            "properties": {},
-                        }
-                    },
-                    {
-                        "name": "get_workflow",
-                        "description": "Get a specific workflow by ID with full details",
-                        "parameters": {
-                            "type": "object",
-                            "properties": {
-                                "workflow_id": {
-                                    "type": "string",
-                                    "description": "The ID of the workflow to retrieve"
-                                }
-                            },
-                            "required": ["workflow_id"]
-                        }
-                    },
-                    {
-                        "name": "create_workflow",
-                        "description": "Create a new n8n workflow from JSON definition",
-                        "parameters": {
-                            "type": "object",
-                            "properties": {
-                                "name": {
-                                    "type": "string",
-                                    "description": "Name of the workflow"
-                                },
-                                "nodes": {
-                                    "type": "array",
-                                    "description": "Array of workflow nodes",
-                                    "items": {"type": "object"}
-                                },
-                                "connections": {
-                                    "type": "object",
-                                    "description": "Node connections mapping"
-                                }
-                            },
-                            "required": ["name", "nodes", "connections"]
-                        }
-                    },
-                    {
-                        "name": "execute_workflow",
-                        "description": "Execute a workflow with optional input data",
-                        "parameters": {
-                            "type": "object",
-                            "properties": {
-                                "workflow_id": {
-                                    "type": "string",
-                                    "description": "ID of the workflow to execute"
-                                },
-                                "input_data": {
-                                    "type": "object",
-                                    "description": "Optional input data for the workflow"
-                                }
-                            },
-                            "required": ["workflow_id"]
-                        }
-                    },
-                    {
-                        "name": "get_node_info",
-                        "description": "Get detailed information about a specific n8n node type",
-                        "parameters": {
-                            "type": "object",
-                            "properties": {
-                                "node_type": {
-                                    "type": "string",
-                                    "description": "The type of node (e.g., 'n8n-nodes-base.httpRequest')"
-                                }
-                            },
-                            "required": ["node_type"]
-                        }
-                    }
-                ]
-            )
-        ]
-        return tools
-    
-    async def _execute_tool_call(self, function_name: str, arguments: Dict[str, Any]) -> Any:
-        """Execute a tool call via MCP.
-        
-        Args:
-            function_name: Name of the function to call
-            arguments: Function arguments
-            
-        Returns:
-            Tool execution result
-        """
-        # Map function calls to MCP client methods
-        if function_name == "list_workflows":
-            return await self.mcp_client.list_workflows()
-        elif function_name == "get_workflow":
-            return await self.mcp_client.get_workflow(arguments["workflow_id"])
-        elif function_name == "create_workflow":
-            return await self.mcp_client.create_workflow(
-                arguments["name"],
-                arguments["nodes"],
-                arguments["connections"]
-            )
-        elif function_name == "execute_workflow":
-            return await self.mcp_client.execute_workflow(
-                arguments["workflow_id"],
-                arguments.get("input_data")
-            )
-        elif function_name == "get_node_info":
-            return await self.mcp_client.get_node_info(arguments["node_type"])
-        else:
-            return {"error": f"Unknown function: {function_name}"}
-    
-    async def chat(self, message: str, session_id: Optional[str] = None, context: Optional[Dict] = None) -> Dict[str, Any]:
-        """Chat with the agent.
-        
-        Args:
-            message: User's message
-            session_id: Optional session ID for conversation continuity
-            context: Optional context (e.g., current workflow data)
-            
-        Returns:
-            Agent response with message and optional workflow data
-        """
-        try:
-            # Prepare tools
-            tools = self._create_mcp_tools()
-            
-            # Create config
-            config = GenerateContentConfig(
-                temperature=AGENT_CONFIG["temperature"],
-                top_p=AGENT_CONFIG["top_p"],
-                top_k=AGENT_CONFIG["top_k"],
-                max_output_tokens=AGENT_CONFIG["max_output_tokens"],
-                system_instruction=SYSTEM_INSTRUCTION,
-                tools=tools
-            )
-            
-            # Add context to message if provided
-            full_message = message
-            if context:
-                full_message = f"Context: {context}\n\nUser message: {message}"
-            
-            # Generate response
-            response = await self.client.aio.models.generate_content(
-                model=AGENT_CONFIG["model"],
-                contents=full_message,
-                config=config
-            )
-            
-            # Handle function calls if present
-            if response.candidates[0].content.parts:
-                for part in response.candidates[0].content.parts:
-                    if hasattr(part, 'function_call') and part.function_call:
-                        # Execute the function call
-                        function_result = await self._execute_tool_call(
-                            part.function_call.name,
-                            dict(part.function_call.args)
-                        )
-                        
-                        # Send result back to model for final response
-                        follow_up = await self.client.aio.models.generate_content(
-                            model=AGENT_CONFIG["model"],
-                            contents=[
-                                Content(parts=[Part(text=full_message)]),
-                                Content(parts=[part]),
-                                Content(parts=[Part(function_response={
-                                    "name": part.function_call.name,
-                                    "response": function_result
-                                })])
-                            ],
-                            config=config
-                        )
-                        
-                        return {
-                            "response": follow_up.text,
-                            "function_called": part.function_call.name,
-                            "function_result": function_result
-                        }
-            
-            return {
-                "response": response.text,
-                "function_called": None
-            }
-            
-        except Exception as e:
-            return {
-                "response": f"I encountered an error: {str(e)}",
-                "error": str(e)
-            }
-    
-    async def generate_workflow(self, description: str) -> Dict[str, Any]:
-        """Generate a workflow from natural language description.
-        
-        Args:
-            description: Natural language description of desired workflow
-            
-        Returns:
-            Workflow JSON and creation result
-        """
-        prompt = f"""Create an n8n workflow based on this description: {description}
-
-Generate a complete, valid n8n workflow JSON with:
-1. All necessary nodes configured properly
-2. Correct connections between nodes
-3. Appropriate error handling nodes
-4. Best practices applied
-
-Return the workflow in this format:
-{{
-    "name": "Workflow Name",
-    "nodes": [...],
-    "connections": {{...}}
-}}"""
-        
-        response = await self.chat(prompt)
-        return response
+        client = get_mcp_client()
+        result = await client.execute_workflow(workflow_id, parsed_input)
+        return {"status": "success", "execution_id": result.get("id"), "result": result}
+    except json.JSONDecodeError as e:
+        return {"status": "error", "message": f"Invalid input JSON: {str(e)}"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
-# Global agent instance
-_agent: Optional[FlowgentAgent] = None
+async def get_node_info(node_type: str) -> Dict[str, Any]:
+    """Get detailed information about a specific n8n node type."""
+    try:
+        client = get_mcp_client()
+        info = await client.get_node_info(node_type)
+        if info:
+            return {"status": "success", "node_info": info}
+        return {
+            "status": "not_found",
+            "message": f"Node type {node_type} not found in MCP. Ask me about it and I'll provide general information."
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
-def get_agent() -> FlowgentAgent:
-    """Get or create the global agent instance."""
+# ============= ADK Components =============
+
+def create_flowgent_agent() -> Agent:
+    """Create the Flowgent agent with n8n tools."""
+    return Agent(
+        name="flowgent",
+        model=AGENT_MODEL,
+        description="AI assistant for n8n workflow automation",
+        instruction=SYSTEM_INSTRUCTION,
+        tools=[list_workflows, get_workflow, create_workflow, execute_workflow, get_node_info]
+    )
+
+
+APP_NAME = "flowgent"
+USER_ID = "default_user"
+
+# Singletons
+_session_service: Optional[InMemorySessionService] = None
+_runner: Optional[Runner] = None
+_agent: Optional[Agent] = None
+
+
+def get_session_service() -> InMemorySessionService:
+    global _session_service
+    if _session_service is None:
+        _session_service = InMemorySessionService()
+    return _session_service
+
+
+def _init_env():
+    api_key = get_gemini_api_key()
+    os.environ["GOOGLE_GENAI_API_KEY"] = api_key
+
+
+def get_agent() -> Agent:
     global _agent
     if _agent is None:
-        _agent = FlowgentAgent()
+        _init_env()
+        _agent = create_flowgent_agent()
     return _agent
+
+
+def get_runner() -> Runner:
+    global _runner
+    if _runner is None:
+        _init_env()
+        _runner = Runner(
+            agent=get_agent(),
+            app_name=APP_NAME,
+            session_service=get_session_service()
+        )
+    return _runner
+
+
+async def ensure_session(session_id: str):
+    """Ensure session exists - only create if it doesn't exist."""
+    svc = get_session_service()
+    session = await svc.get_session(app_name=APP_NAME, user_id=USER_ID, session_id=session_id)
+    if session is None:
+        logger.info(f"Creating new session: {session_id}")
+        await svc.create_session(app_name=APP_NAME, user_id=USER_ID, session_id=session_id)
+
+
+async def chat_with_agent(message: str, session_id: str = "default_session") -> str:
+    """Send a message to the agent and get a response."""
+    runner = get_runner()
+    await ensure_session(session_id)
+    
+    user_content = types.Content(role="user", parts=[types.Part(text=message)])
+    
+    final_response = ""
+    try:
+        async for event in runner.run_async(
+            user_id=USER_ID,
+            session_id=session_id,
+            new_message=user_content
+        ):
+            if event.is_final_response():
+                if event.content and event.content.parts:
+                    for part in event.content.parts:
+                        if hasattr(part, 'text') and part.text:
+                            final_response += part.text
+    except Exception as e:
+        logger.error(f"Error during agent run: {e}")
+        return f"Error processing request: {str(e)}"
+        
+    return final_response if final_response else "I processed your request but have no response."
