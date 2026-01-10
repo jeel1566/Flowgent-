@@ -8,16 +8,20 @@
 
     let isN8nPage = false;
     let observer = null;
+    let tooltipScript = null;
 
     // Check if this is an n8n page
     function detectN8n() {
         // Look for n8n-specific elements
         const n8nIndicators = [
             '[data-test-id="canvas"]',
-            '.node-view',
+            '[data-test-id="node-view-root"]',
+            '.node-view-root',
             '.jtk-connector',
             '#node-creator',
-            '[class*="n8n"]'
+            '.n8n-node',
+            '[class*="NodeViewWrapper"]',
+            '[class*="WorkflowCanvas"]'
         ];
 
         for (const selector of n8nIndicators) {
@@ -28,8 +32,10 @@
         }
 
         // Check URL patterns
-        if (window.location.href.includes('/workflow/') ||
-            window.location.href.includes('n8n.io') ||
+        const url = window.location.href.toLowerCase();
+        if (url.includes('/workflow/') ||
+            url.includes('n8n.io') ||
+            url.includes('n8n.cloud') ||
             window.location.hostname.includes('n8n')) {
             isN8nPage = true;
             return true;
@@ -41,112 +47,209 @@
     // Initialize the Information Hand feature
     function initInformationHand() {
         if (!isN8nPage) {
-            console.log('Flowgent: Not an n8n page, skipping Information Hand');
+            console.log('Flowgent: Not an n8n page');
             return;
         }
 
-        console.log('Flowgent: n8n page detected, initializing Information Hand');
+        console.log('Flowgent: n8n page detected! Initializing Information Hand...');
 
-        // Inject tooltip script and styles
+        // Inject tooltip resources
         injectTooltipResources();
 
         // Watch for node elements
-        watchForNodes();
+        setTimeout(() => {
+            watchForNodes();
+            // Scan existing nodes
+            scanAndAttach();
+        }, 2000);
     }
 
     // Inject tooltip script and stylesheet
     function injectTooltipResources() {
-        // Inject CSS
-        const link = document.createElement('link');
-        link.rel = 'stylesheet';
-        link.href = chrome.runtime.getURL('content/styles.css');
-        document.head.appendChild(link);
+        // Inject inline styles for tooltip (more reliable)
+        const style = document.createElement('style');
+        style.textContent = `
+            .flowgent-tooltip {
+                transition: opacity 0.2s ease;
+            }
+            .flowgent-tooltip:hover {
+                opacity: 1 !important;
+            }
+            .flowgent-node-highlight {
+                outline: 2px solid #8b5cf6 !important;
+                outline-offset: 2px;
+            }
+        `;
+        document.head.appendChild(style);
 
         // Inject tooltip script
-        const script = document.createElement('script');
-        script.src = chrome.runtime.getURL('content/tooltip.js');
-        document.body.appendChild(script);
+        if (!tooltipScript) {
+            tooltipScript = document.createElement('script');
+            tooltipScript.src = chrome.runtime.getURL('content/tooltip.js');
+            tooltipScript.onload = () => console.log('Flowgent: Tooltip script loaded');
+            tooltipScript.onerror = (e) => console.error('Flowgent: Failed to load tooltip script', e);
+            document.body.appendChild(tooltipScript);
+        }
+    }
+
+    // Scan and attach to all nodes
+    function scanAndAttach() {
+        console.log('Flowgent: Scanning for n8n nodes...');
+        const attached = attachTooltipHandlers(document.body);
+        console.log(`Flowgent: Attached handlers to ${attached} nodes`);
     }
 
     // Watch for n8n node elements
     function watchForNodes() {
-        // Observe DOM changes to detect new nodes
+        if (observer) return;
+
         observer = new MutationObserver((mutations) => {
+            let shouldScan = false;
             mutations.forEach((mutation) => {
-                mutation.addedNodes.forEach((node) => {
-                    if (node.nodeType === Node.ELEMENT_NODE) {
-                        attachTooltipHandlers(node);
-                    }
-                });
+                if (mutation.addedNodes.length > 0) {
+                    shouldScan = true;
+                }
             });
+            if (shouldScan) {
+                // Debounce
+                setTimeout(scanAndAttach, 500);
+            }
         });
 
         observer.observe(document.body, {
             childList: true,
             subtree: true
         });
-
-        // Attach to existing nodes
-        attachTooltipHandlers(document.body);
     }
 
     // Attach tooltip event handlers to nodes
     function attachTooltipHandlers(container) {
-        // Look for n8n node elements
+        let count = 0;
+
+        // Updated selectors for modern n8n
         const nodeSelectors = [
+            '[data-test-id^="canvas-node"]',
             '[data-test-id*="node"]',
+            '.vue-flow__node',
+            '[class*="CanvasNode"]',
+            '[class*="node-wrapper"]',
             '.node-wrapper',
-            '.node',
-            '[class*="Node_"]',
-            '[data-node-name]'
+            '[data-node-name]',
+            '[data-node-type]'
         ];
 
+        const allNodes = new Set();
+
         nodeSelectors.forEach(selector => {
-            const nodes = container.querySelectorAll ? container.querySelectorAll(selector) : [];
-
-            nodes.forEach(nodeElement => {
-                // Skip if already has handler
-                if (nodeElement.dataset.flowgentTooltip) return;
-
-                nodeElement.dataset.flowgentTooltip = 'true';
-
-                // Extract node type
-                const nodeType = extractNodeType(nodeElement);
-                if (nodeType) {
-                    nodeElement.addEventListener('mouseenter', (e) => showTooltip(e, nodeType));
-                    nodeElement.addEventListener('mouseleave', hideTooltip);
-                }
-            });
+            try {
+                const nodes = container.querySelectorAll(selector);
+                nodes.forEach(n => allNodes.add(n));
+            } catch (e) { }
         });
+
+        allNodes.forEach(nodeElement => {
+            if (nodeElement.dataset.flowgentAttached) return;
+
+            const nodeType = extractNodeType(nodeElement);
+            if (nodeType) {
+                nodeElement.dataset.flowgentAttached = 'true';
+
+                nodeElement.addEventListener('mouseenter', (e) => {
+                    e.stopPropagation();
+                    nodeElement.classList.add('flowgent-node-highlight');
+                    showTooltip(e, nodeType);
+                });
+
+                nodeElement.addEventListener('mouseleave', (e) => {
+                    nodeElement.classList.remove('flowgent-node-highlight');
+                    hideTooltip();
+                });
+
+                count++;
+            }
+        });
+
+        return count;
     }
 
     // Extract node type from element
     function extractNodeType(element) {
-        // Try various methods to get node type
-        const nodeName = element.dataset.nodeName ||
-            element.dataset.name ||
+        // Try data attributes first
+        let nodeType = element.dataset.nodeType ||
+            element.dataset.nodeName ||
             element.getAttribute('data-node-type') ||
-            element.className;
+            element.getAttribute('data-name');
 
-        // Common n8n node patterns
-        if (nodeName.includes('HttpRequest')) return 'n8n-nodes-base.httpRequest';
-        if (nodeName.includes('Webhook')) return 'n8n-nodes-base.webhook';
-        if (nodeName.includes('Set')) return 'n8n-nodes-base.set';
-        if (nodeName.includes('If')) return 'n8n-nodes-base.if';
-        if (nodeName.includes('Code')) return 'n8n-nodes-base.code';
-        if (nodeName.includes('Slack')) return 'n8n-nodes-base.slack';
-        if (nodeName.includes('Google')) {
-            if (nodeName.includes('Sheets')) return 'n8n-nodes-base.googleSheets';
-            if (nodeName.includes('Drive')) return 'n8n-nodes-base.googleDrive';
+        if (nodeType) {
+            return normalizeNodeType(nodeType);
         }
 
-        // Return the raw name if we can't determine specific type
-        return nodeName || null;
+        // Try to get from text content or title
+        const title = element.querySelector('[class*="title"], [class*="name"], .node-title, .node-name');
+        if (title) {
+            const text = title.textContent.trim();
+            return normalizeNodeType(text);
+        }
+
+        // Try class names
+        const className = element.className || '';
+        const match = className.match(/node-(\w+)/i);
+        if (match) {
+            return normalizeNodeType(match[1]);
+        }
+
+        return null;
+    }
+
+    // Normalize node type to n8n format
+    function normalizeNodeType(name) {
+        if (!name) return null;
+
+        const cleaned = name.trim().replace(/\s+/g, '');
+
+        // If already in n8n format
+        if (cleaned.startsWith('n8n-nodes-')) {
+            return cleaned;
+        }
+
+        // Map common names to node types
+        const nodeMap = {
+            'httprequest': 'n8n-nodes-base.httpRequest',
+            'http': 'n8n-nodes-base.httpRequest',
+            'webhook': 'n8n-nodes-base.webhook',
+            'set': 'n8n-nodes-base.set',
+            'if': 'n8n-nodes-base.if',
+            'switch': 'n8n-nodes-base.switch',
+            'code': 'n8n-nodes-base.code',
+            'function': 'n8n-nodes-base.function',
+            'slack': 'n8n-nodes-base.slack',
+            'googlesheets': 'n8n-nodes-base.googleSheets',
+            'gmail': 'n8n-nodes-base.gmail',
+            'schedule': 'n8n-nodes-base.scheduleTrigger',
+            'scheduletrigger': 'n8n-nodes-base.scheduleTrigger',
+            'cron': 'n8n-nodes-base.cron',
+            'merge': 'n8n-nodes-base.merge',
+            'split': 'n8n-nodes-base.splitInBatches',
+            'postgres': 'n8n-nodes-base.postgres',
+            'mysql': 'n8n-nodes-base.mysql',
+            'notion': 'n8n-nodes-base.notion',
+            'airtable': 'n8n-nodes-base.airtable',
+            'discord': 'n8n-nodes-base.discord',
+            'telegram': 'n8n-nodes-base.telegram',
+            'openai': 'n8n-nodes-base.openai',
+        };
+
+        const lower = cleaned.toLowerCase();
+        if (nodeMap[lower]) {
+            return nodeMap[lower];
+        }
+
+        // Default: assume it's a valid node type
+        return `n8n-nodes-base.${cleaned}`;
     }
 
     // Show tooltip
     function showTooltip(event, nodeType) {
-        // Send message to get node info
         window.postMessage({
             type: 'FLOWGENT_SHOW_TOOLTIP',
             nodeType: nodeType,
@@ -164,17 +267,39 @@
         }, '*');
     }
 
-    // Initialize when page loads
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', () => {
-            if (detectN8n()) {
-                setTimeout(initInformationHand, 1000); // Wait for n8n to load
-            }
-        });
-    } else {
+    // Initialize
+    function init() {
+        console.log('Flowgent: Content script initializing...');
+
+        // Check immediately
         if (detectN8n()) {
-            setTimeout(initInformationHand, 1000);
+            initInformationHand();
         }
+
+        // Also check after short delay (for SPA)
+        setTimeout(() => {
+            if (!isN8nPage && detectN8n()) {
+                initInformationHand();
+            }
+        }, 3000);
+
+        // Re-check on navigation (for SPA)
+        let lastUrl = location.href;
+        new MutationObserver(() => {
+            if (location.href !== lastUrl) {
+                lastUrl = location.href;
+                if (detectN8n()) {
+                    setTimeout(initInformationHand, 1000);
+                }
+            }
+        }).observe(document, { subtree: true, childList: true });
+    }
+
+    // Run init
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
     }
 
 })();
