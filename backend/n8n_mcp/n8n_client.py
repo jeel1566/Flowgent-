@@ -12,7 +12,7 @@ class N8nMcpClient:
     """n8n MCP Client with proper session ID management."""
     
     def __init__(self):
-        self.mcp_url = os.getenv("N8N_MCP_URL", "https://api.n8n-mcp.com/mcp")
+        self.mcp_url = os.getenv("N8N_MCP_URL") or os.getenv("N8N_MCP_SERVER_URL") or "https://api.n8n-mcp.com/mcp"
         self.api_key = os.getenv("N8N_MCP_API_KEY", "")
         self._client: Optional[httpx.AsyncClient] = None
         self._request_id = 0
@@ -224,9 +224,14 @@ class N8nMcpClient:
         """List workflows from n8n instance."""
         try:
             result = await self.call_tool("n8n_list_workflows", {})
-            if isinstance(result, dict) and "workflows" in result:
-                return result["workflows"]
-            return result if isinstance(result, list) else []
+            if isinstance(result, list):
+                return result
+            if isinstance(result, dict):
+                # Try common keys
+                for key in ["workflows", "data", "result"]:
+                    if key in result and isinstance(result[key], list):
+                        return result[key]
+            return []
         except Exception as e:
             logger.warning(f"list_workflows failed: {e}")
             return []
@@ -287,8 +292,17 @@ class N8nMcpClient:
             if workflow_id:
                 args["workflowId"] = workflow_id
             result = await self.call_tool("n8n_executions", args)
-            return result if isinstance(result, list) else []
-        except Exception:
+            
+            if isinstance(result, list):
+                return result
+            if isinstance(result, dict):
+                # Try common keys
+                for key in ["executions", "data", "result"]:
+                    if key in result and isinstance(result[key], list):
+                        return result[key]
+            return []
+        except Exception as e:
+            logger.warning(f"list_executions failed: {e}")
             return []
 
     async def close(self):
