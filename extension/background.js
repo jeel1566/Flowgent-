@@ -42,8 +42,25 @@ async function handleMessage(request, sender) {
             }
             return { success: true };
 
+        case 'openSidePanelWithContext':
+            // Open side panel with context for AI help
+            if (sender.tab) {
+                await chrome.sidePanel.open({ windowId: sender.tab.windowId });
+                
+                // Store context for the side panel
+                if (data.context) {
+                    await chrome.storage.local.set({ 
+                        aiContext: {
+                            ...data.context,
+                            timestamp: Date.now()
+                        }
+                    });
+                }
+            }
+            return { success: true };
+
         case 'fetchNodeInfo':
-            // Proxy request to backend
+            // Proxy request to backend (original endpoint)
             const settings = await chrome.storage.local.get('backendUrl');
             const baseUrl = settings.backendUrl || 'http://localhost:8000';
 
@@ -66,6 +83,38 @@ async function handleMessage(request, sender) {
                 return { success: true, info };
             } catch (error) {
                 console.error('Fetch error:', error);
+                return { error: error.message };
+            }
+
+        case 'fetchNodePreview':
+            // Proxy request to new preview endpoint (optimized for Information Hand)
+            const previewSettings = await chrome.storage.local.get('backendUrl');
+            const previewBaseUrl = previewSettings.backendUrl || 'http://localhost:8000';
+            const previewTypeValue = data.previewType || 'brief';
+
+            try {
+                const response = await fetch(
+                    `${previewBaseUrl}/api/node-preview/${encodeURIComponent(data.nodeType)}?preview_type=${previewTypeValue}`
+                );
+                if (!response.ok) {
+                    throw new Error(`Backend error: ${response.status}`);
+                }
+                const previewData = await response.json();
+
+                // Cache with preview type
+                const previewCacheKey = `preview_${previewTypeValue}_${data.nodeType}`;
+                const currentPreviewCache = await chrome.storage.local.get(previewCacheKey);
+                const updatedPreviewCache = currentPreviewCache[previewCacheKey] || {};
+                updatedPreviewCache[data.nodeType] = {
+                    info: previewData,
+                    previewType: previewTypeValue,
+                    timestamp: Date.now()
+                };
+                await chrome.storage.local.set({ [previewCacheKey]: updatedPreviewCache });
+
+                return { success: true, info: previewData };
+            } catch (error) {
+                console.error('Preview fetch error:', error);
                 return { error: error.message };
             }
 
@@ -96,6 +145,42 @@ async function handleMessage(request, sender) {
             };
 
             await chrome.storage.local.set({ nodeCache: updatedCache });
+            return { success: true };
+
+        case 'getNodePreview':
+            // Get cached preview data
+            const getPreviewType = data.previewType || 'brief';
+            const getPreviewCacheKey = `preview_${getPreviewType}_${data.nodeType}`;
+            const getPreviewCache = await chrome.storage.local.get(getPreviewCacheKey);
+            const getPreviewDataCache = getPreviewCache[getPreviewCacheKey] || {};
+
+            if (getPreviewDataCache[data.nodeType]) {
+                const cached = getPreviewDataCache[data.nodeType];
+                const age = Date.now() - cached.timestamp;
+
+                // Cache valid for 1 hour for brief, 24 hours for full
+                const maxAge = getPreviewType === 'full' ? 24 * 60 * 60 * 1000 : 60 * 60 * 1000;
+                if (age < maxAge) {
+                    return { success: true, info: cached.info, cached: true, age };
+                }
+            }
+
+            return { success: false };
+
+        case 'cacheNodePreview':
+            // Cache preview data with preview type
+            const cachePreviewType = data.previewType || 'brief';
+            const cachePreviewKey = `preview_${cachePreviewType}_${data.nodeType}`;
+            const currentPreviewCache = await chrome.storage.local.get(cachePreviewKey);
+            const updatedPreviewCache = currentPreviewCache[cachePreviewKey] || {};
+
+            updatedPreviewCache[data.nodeType] = {
+                info: data.info,
+                cachedPreviewType: cachePreviewType,
+                timestamp: Date.now()
+            };
+
+            await chrome.storage.local.set({ [cachePreviewKey]: updatedPreviewCache });
             return { success: true };
 
         case 'getCurrentTab':

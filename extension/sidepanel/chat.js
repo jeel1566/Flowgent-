@@ -25,6 +25,33 @@ const Chat = {
         });
 
         sendButton.addEventListener('click', () => this.sendMessage());
+
+        // Check for stored AI context
+        this.checkForContext();
+    },
+
+    async checkForContext() {
+        try {
+            const { aiContext } = await chrome.storage.local.get('aiContext');
+            if (aiContext && aiContext.nodeType) {
+                // There's context from Information Hand
+                const timeSince = Date.now() - (aiContext.timestamp || 0);
+                
+                // Only use context if less than 5 minutes old
+                if (timeSince < 5 * 60 * 1000) {
+                    const input = document.getElementById('chatInput');
+                    const contextMessage = `Can you help me with the ${aiContext.nodeType} node? I want to understand how to use it.`;
+                    input.value = contextMessage;
+                    input.style.height = 'auto';
+                    input.style.height = input.scrollHeight + 'px';
+                    
+                    // Clear the context
+                    await chrome.storage.local.remove('aiContext');
+                }
+            }
+        } catch (error) {
+            console.error('Error checking context:', error);
+        }
     },
 
     async sendMessage() {

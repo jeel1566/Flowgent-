@@ -71,6 +71,30 @@ class NodeInfo(BaseModel):
     example_config: Optional[Dict[str, Any]] = None
 
 
+class NodePreview(BaseModel):
+    """Lightweight node preview for Information Hand hover feature."""
+    node_type: str
+    display_name: str
+    short_description: str = ""
+    description: str = ""
+    icon_emoji: str = "📦"
+    category: str = "General"
+    popularity: str = "⭐⭐"
+    parameters: List[Dict[str, Any]] = []
+    use_cases: List[str] = []
+    best_practices: List[str] = []
+    example_configs: List[Dict[str, Any]] = []
+    documentation_url: Optional[str] = None
+
+
+class NodePreviewResponse(BaseModel):
+    """Response for node preview endpoint."""
+    success: bool
+    preview: Optional[NodePreview] = None
+    error: Optional[str] = None
+    preview_type: Optional[str] = None
+
+
 class HealthCheck(BaseModel):
     status: str
     version: str

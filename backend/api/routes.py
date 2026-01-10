@@ -1,10 +1,13 @@
-from fastapi import APIRouter, HTTPException, Query, Header
+from fastapi import APIRouter, HTTPException, Query, Header, Request
+from fastapi.responses import StreamingResponse
 from typing import List, Optional
+import json
 from models.schemas import (
     ChatMessage, ChatResponse, WorkflowListItem, Workflow,
-    ExecutionRequest, ExecutionResponse, NodeInfo, CreateWorkflowRequest
+    ExecutionRequest, ExecutionResponse, NodeInfo, CreateWorkflowRequest,
+    NodePreview, NodePreviewResponse
 )
-from agent.flowgent_agent import chat_with_agent
+from agent.flowgent_agent import chat_with_agent, stream_chat_with_agent, get_node_preview, search_nodes_for_preview
 from n8n_mcp.n8n_client import get_mcp_client
 from n8n_mcp.direct_client import create_n8n_client
 
@@ -204,3 +207,120 @@ async def list_executions(
         return executions
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============= Information Hand / Preview Endpoints =============
+
+@router.get("/node-preview/{node_type:path}", response_model=NodePreviewResponse)
+async def get_node_preview_route(node_type: str, preview_type: str = "brief"):
+    """Get a quick preview of a node for the Information Hand hover feature.
+    
+    This endpoint is optimized for fast responses suitable for hover tooltips.
+    
+    Args:
+        node_type: The n8n node type (e.g., 'n8n-nodes-base.httpRequest')
+        preview_type: 'brief' for quick tooltip, 'full' for detailed preview
+    
+    Returns:
+        NodePreview with display name, description, icon, category, etc.
+    """
+    try:
+        result = await get_node_preview(node_type, preview_type)
+        
+        if result.get("status") == "success":
+            preview_data = result.get("preview", {})
+            return NodePreviewResponse(
+                success=True,
+                preview=NodePreview(
+                    node_type=preview_data.get("node_type", node_type),
+                    display_name=preview_data.get("display_name", node_type.split(".")[-1]),
+                    short_description=preview_data.get("short_description", preview_data.get("description", "")),
+                    description=preview_data.get("description", ""),
+                    icon_emoji=preview_data.get("icon_emoji", "📦"),
+                    category=preview_data.get("category", "General"),
+                    popularity=preview_data.get("popularity", "⭐⭐"),
+                    parameters=preview_data.get("parameters", []),
+                    use_cases=preview_data.get("use_cases", []),
+                    best_practices=preview_data.get("best_practices", []),
+                    example_configs=preview_data.get("example_configs", []),
+                    documentation_url=preview_data.get("documentation_url")
+                )
+            )
+        else:
+            return NodePreviewResponse(
+                success=False,
+                error=result.get("message", "Unknown error"),
+                preview_type=preview_type
+            )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/node-search")
+async def search_nodes_preview(query: str = "", limit: int = 5):
+    """Quick search for nodes with preview data - optimized for Information Hand.
+    
+    This endpoint returns lightweight preview data for multiple nodes,
+    suitable for search-as-you-type functionality.
+    
+    Args:
+        query: Search query for node names
+        limit: Maximum number of results to return
+    
+    Returns:
+        List of node previews with minimal data for fast rendering
+    """
+    try:
+        result = await search_nodes_for_preview(query, limit)
+        
+        if result.get("status") == "success":
+            return {
+                "success": True,
+                "query": result.get("query"),
+                "previews": result.get("previews", [])
+            }
+        else:
+            return {
+                "success": False,
+                "error": result.get("message", "Unknown error"),
+                "previews": []
+            }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/chat/stream")
+async def stream_chat(message: ChatMessage):
+    """Stream chat response for real-time updates.
+    
+    Returns a Server-Sent Events (SSE) stream of the agent's response,
+    providing a more responsive chat experience.
+    """
+    try:
+        session_id = "default_session"
+        if message.context and "session_id" in message.context:
+            session_id = message.context["session_id"]
+        
+        async def generate():
+            async for chunk in stream_chat_with_agent(message.message, session_id):
+                yield f"data: {json.dumps({'chunk': chunk})}\n\n"
+            
+            yield f"data: {json.dumps({'done': True})}\n\n"
+        
+        return StreamingResponse(
+            generate(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no"
+            }
+        )
+    except Exception as e:
+        async def error_stream():
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        
+        return StreamingResponse(
+            error_stream(),
+            media_type="text/event-stream"
+        )

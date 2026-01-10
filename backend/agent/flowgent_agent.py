@@ -1,7 +1,8 @@
 import os
 import json
 import logging
-from typing import Optional, Dict, Any
+import re
+from typing import Optional, Dict, Any, AsyncGenerator, List
 
 # ADK imports
 from google.adk.agents import Agent
@@ -129,6 +130,247 @@ async def execute_workflow(workflow_id: str, input_data: Optional[str] = None) -
         return {"status": "error", "message": str(e)}
 
 
+# ============= Information Hand Preview Tools =============
+
+async def get_node_preview(node_type: str, preview_type: str = "brief") -> Dict[str, Any]:
+    """Get a quick preview of a node for Information Hand hover feature.
+    
+    Args:
+        node_type: The n8n node type (e.g., 'n8n-nodes-base.httpRequest')
+        preview_type: 'brief' for quick tooltip, 'full' for detailed preview
+    
+    Returns:
+        Dictionary with preview information for display
+    """
+    try:
+        client = get_mcp_client()
+        
+        # Get basic node info
+        node_info = await client.get_node(node_type, mode="docs", detail="standard")
+        
+        if preview_type == "brief":
+            # Quick summary for hover tooltip
+            return {
+                "status": "success",
+                "preview": {
+                    "node_type": node_type,
+                    "display_name": _extract_display_name(node_type, node_info),
+                    "short_description": _get_short_description(node_info),
+                    "icon_emoji": _get_node_icon(node_type),
+                    "category": _get_node_category(node_type),
+                    "popularity": _get_node_popularity(node_type)
+                }
+            }
+        else:
+            # Full preview with examples and use cases
+            return {
+                "status": "success",
+                "preview": {
+                    "node_type": node_type,
+                    "display_name": _extract_display_name(node_type, node_info),
+                    "description": _get_description(node_info),
+                    "icon_emoji": _get_node_icon(node_type),
+                    "category": _get_node_category(node_type),
+                    "parameters": _extract_parameters(node_info),
+                    "use_cases": _extract_use_cases(node_info),
+                    "best_practices": _extract_best_practices(node_info),
+                    "example_configs": _extract_examples(node_info),
+                    "documentation_url": _get_docs_url(node_type)
+                }
+            }
+    except Exception as e:
+        logger.error(f"Error getting node preview: {e}")
+        return {"status": "error", "message": str(e), "preview_type": preview_type}
+
+
+async def search_nodes_for_preview(query: str, limit: int = 5) -> Dict[str, Any]:
+    """Quick search for nodes with preview data - optimized for Information Hand."""
+    try:
+        client = get_mcp_client()
+        results = await client.search_nodes(query, include_examples=True)
+        
+        previews = []
+        if isinstance(results, dict) and "results" in results:
+            for item in results["results"][:limit]:
+                previews.append({
+                    "node_type": item.get("nodeType", item.get("id")),
+                    "display_name": item.get("name", item.get("nodeType", "Unknown")),
+                    "short_description": item.get("description", "")[:100],
+                    "icon_emoji": _get_node_icon(item.get("nodeType", "")),
+                    "category": _get_node_category(item.get("nodeType", ""))
+                })
+        
+        return {"status": "success", "previews": previews, "query": query}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+# ============= Helper Functions for Node Previews =============
+
+def _extract_display_name(node_type: str, node_info: Any) -> str:
+    """Extract display name from node type or info."""
+    if isinstance(node_info, dict):
+        name = node_info.get("name") or node_info.get("displayName")
+        if name:
+            return name
+    
+    # Parse from node type
+    parts = node_type.split(".")
+    if len(parts) > 1:
+        # Convert camelCase to spaced words
+        last_part = parts[-1]
+        spaced = re.sub(r'([A-Z])', r' \1', last_part)
+        return spaced.strip()
+    return node_type
+
+
+def _get_short_description(node_info: Any) -> str:
+    """Get short description for hover tooltip."""
+    if isinstance(node_info, dict):
+        return node_info.get("text", node_info.get("description", ""))[:150]
+    return str(node_info)[:150]
+
+
+def _get_description(node_info: Any) -> str:
+    """Get full description."""
+    if isinstance(node_info, dict):
+        return node_info.get("text", node_info.get("description", "No description available"))
+    return str(node_info)
+
+
+def _get_node_icon(node_type: str) -> str:
+    """Get emoji icon for node type."""
+    icons = {
+        "httpRequest": "🌐",
+        "webhook": "🪝",
+        "set": "📝",
+        "if": "🔀",
+        "switch": "🎛️",
+        "code": "💻",
+        "function": "⚡",
+        "slack": "💬",
+        "googleSheets": "📊",
+        "gmail": "📧",
+        "scheduleTrigger": "⏰",
+        "cron": "⏰",
+        "merge": "🔗",
+        "postgres": "🐘",
+        "mysql": "🐬",
+        "notion": "📓",
+        "airtable": "📋",
+        "discord": "🎮",
+        "telegram": "✈️",
+        "openai": "🤖",
+        "ai": "🧠",
+        "database": "💾",
+        "api": "🔌",
+        "trigger": "🚀",
+        "email": "📬",
+        "http": "🌐",
+        "filter": "🔍",
+        "editFields": "✏️",
+        "noOp": "⏭️",
+        "wait": "⏳",
+        "errorTrigger": "⚠️",
+    }
+    
+    lower = node_type.lower()
+    for key, icon in icons.items():
+        if key.lower() in lower:
+            return icon
+    return "📦"
+
+
+def _get_node_category(node_type: str) -> str:
+    """Get category for node type."""
+    categories = {
+        "http": "Core",
+        "webhook": "Core",
+        "set": "Core",
+        "if": "Logic",
+        "switch": "Logic",
+        "code": "Core",
+        "function": "Core",
+        "scheduleTrigger": "Trigger",
+        "cron": "Trigger",
+        "slack": "Communication",
+        "googleSheets": "Data & Storage",
+        "gmail": "Communication",
+        "postgres": "Data & Storage",
+        "mysql": "Data & Storage",
+        "notion": "Data & Storage",
+        "airtable": "Data & Storage",
+        "discord": "Communication",
+        "telegram": "Communication",
+        "openai": "AI",
+        "ai": "AI",
+        "database": "Data & Storage",
+        "trigger": "Trigger",
+        "email": "Communication",
+        "filter": "Data & Storage",
+    }
+    
+    lower = node_type.lower()
+    for key, category in categories.items():
+        if key.lower() in lower:
+            return category
+    return "General"
+
+
+def _get_node_popularity(node_type: str) -> str:
+    """Get popularity indicator for node type."""
+    popular = {
+        "httpRequest": "⭐⭐⭐⭐⭐",
+        "webhook": "⭐⭐⭐⭐⭐",
+        "set": "⭐⭐⭐⭐⭐",
+        "if": "⭐⭐⭐⭐⭐",
+        "code": "⭐⭐⭐⭐",
+        "scheduleTrigger": "⭐⭐⭐⭐",
+        "slack": "⭐⭐⭐⭐",
+        "gmail": "⭐⭐⭐⭐",
+        "googleSheets": "⭐⭐⭐⭐",
+    }
+    
+    lower = node_type.lower()
+    for key, pop in popular.items():
+        if key.lower() in lower:
+            return pop
+    return "⭐⭐"
+
+
+def _extract_parameters(node_info: Any) -> List[Dict[str, Any]]:
+    """Extract parameters from node info."""
+    if isinstance(node_info, dict):
+        return node_info.get("parameters", [])
+    return []
+
+
+def _extract_use_cases(node_info: Any) -> List[str]:
+    """Extract use cases from node info."""
+    if isinstance(node_info, dict):
+        return node_info.get("useCases", node_info.get("use_cases", []))
+    return []
+
+
+def _extract_best_practices(node_info: Any) -> List[str]:
+    """Extract best practices from node info."""
+    if isinstance(node_info, dict):
+        return node_info.get("bestPractices", node_info.get("best_practices", []))
+    return []
+
+
+def _extract_examples(node_info: Any) -> List[Dict[str, Any]]:
+    """Extract example configurations from node info."""
+    if isinstance(node_info, dict):
+        return node_info.get("examples", node_info.get("example_configs", []))
+    return []
+
+
+def _get_docs_url(node_type: str) -> str:
+    """Get documentation URL for node."""
+    return f"https://docs.n8n.io/integrations/builtin/node-n8n-nodes-base/{node_type.split('.')[-1].lower()}/"
+
+
 # ============= ADK Agent =============
 
 def create_flowgent_agent() -> Agent:
@@ -145,6 +387,9 @@ def create_flowgent_agent() -> Agent:
             search_workflow_templates,
             get_workflow_template,
             validate_workflow_json,
+            # Information Hand preview tools
+            get_node_preview,
+            search_nodes_for_preview,
             # n8n management tools (need n8n API)
             list_workflows,
             get_workflow,
@@ -228,3 +473,32 @@ async def chat_with_agent(message: str, session_id: str = "default_session") -> 
         return f"Error processing request: {str(e)}"
         
     return final_response if final_response else "I processed your request but have no response."
+
+
+async def stream_chat_with_agent(message: str, session_id: str = "default_session") -> AsyncGenerator[str, None]:
+    """Stream response from the agent for real-time updates."""
+    runner = get_runner()
+    await ensure_session(session_id)
+    
+    user_content = types.Content(role="user", parts=[types.Part(text=message)])
+    
+    try:
+        async for event in runner.run_async(
+            user_id=USER_ID,
+            session_id=session_id,
+            new_message=user_content
+        ):
+            if event.is_final_response():
+                if event.content and event.content.parts:
+                    for part in event.content.parts:
+                        if hasattr(part, 'text') and part.text:
+                            yield part.text
+            else:
+                # Stream partial responses if available
+                if event.content and event.content.parts:
+                    for part in event.content.parts:
+                        if hasattr(part, 'text') and part.text:
+                            yield part.text
+    except Exception as e:
+        logger.error(f"Error during agent stream: {e}")
+        yield f"Error processing request: {str(e)}"
