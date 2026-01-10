@@ -3,7 +3,8 @@ from typing import List, Optional
 import logging
 from models.schemas import (
     ChatMessage, ChatResponse, WorkflowListItem, Workflow,
-    ExecutionRequest, ExecutionResponse, NodeInfo, CreateWorkflowRequest
+    ExecutionRequest, ExecutionResponse, NodeInfo, CreateWorkflowRequest,
+    UpdateWorkflowRequest
 )
 from agent.flowgent_agent import chat_with_agent
 from n8n_mcp.n8n_client import get_mcp_client
@@ -148,6 +149,49 @@ async def create_workflow(req: CreateWorkflowRequest):
     except Exception as e:
         logger.error(f"Failed to create workflow: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to create workflow: {str(e)}")
+
+
+@router.put("/workflows/{workflow_id}", response_model=Workflow)
+async def update_workflow(workflow_id: str, req: UpdateWorkflowRequest):
+    """Update an existing workflow in n8n."""
+    try:
+        logger.info(f"Updating workflow: {workflow_id}")
+        
+        # Prepare updates dict
+        updates = {}
+        if req.name is not None:
+            updates["name"] = req.name
+        if req.nodes is not None:
+            updates["nodes"] = req.nodes
+        if req.connections is not None:
+            updates["connections"] = req.connections
+        if req.active is not None:
+            updates["active"] = req.active
+        
+        # Use direct client if n8n config provided
+        if req.n8n_config and req.n8n_config.instance_url and req.n8n_config.api_key:
+            logger.info("Using direct n8n client for update_workflow")
+            direct_client = create_n8n_client(req.n8n_config.instance_url, req.n8n_config.api_key)
+            result = await direct_client.update_workflow(workflow_id, updates)
+        else:
+            # Fall back to MCP
+            logger.info("Using MCP client for update_workflow")
+            client = get_mcp_client()
+            result = await client.update_workflow(workflow_id, updates)
+        
+        logger.info(f"Workflow updated successfully: {workflow_id}")
+        return Workflow(
+            id=str(result.get("id", workflow_id)),
+            name=result.get("name", req.name or "Untitled"),
+            active=result.get("active", False),
+            nodes=result.get("nodes", req.nodes or []),
+            connections=result.get("connections", req.connections or {}),
+            createdAt=result.get("createdAt"),
+            updatedAt=result.get("updatedAt")
+        )
+    except Exception as e:
+        logger.error(f"Failed to update workflow {workflow_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to update workflow: {str(e)}")
 
 
 @router.post("/execute", response_model=ExecutionResponse)

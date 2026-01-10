@@ -7,11 +7,13 @@
 ## ✨ Features
 
 ### 🤖 AI Chat Assistant
-- Natural language workflow creation: "Create a workflow that sends daily Slack notifications"
-- Debug and fix broken workflows
-- Import and analyze workflow JSON
+- **Create workflows**: "Create a workflow that sends daily Slack notifications"
+- **Edit workflows**: "Add an If node to workflow #123" ✨ **NEW**
+- **Fix workflows**: "Fix the broken connection in workflow #456" ✨ **NEW**
+- Debug and analyze workflow JSON
 - Get instant answers about n8n nodes and best practices
 - Powered by **Google Gemini 2.0 Flash** with n8n expertise
+- Full workflow lifecycle management (create, read, update, execute)
 
 ### ℹ️ Information Hand
 - Hover over any n8n node to see instant documentation
@@ -149,7 +151,9 @@ gcloud builds submit --config cloudbuild.yaml
 | `/health` | GET | Health check and status |
 | `/api/chat` | POST | Chat with AI assistant |
 | `/api/workflows` | GET | List all workflows |
+| `/api/workflows` | POST | Create a new workflow |
 | `/api/workflows/{id}` | GET | Get workflow details |
+| `/api/workflows/{id}` | PUT | **Update workflow** ✨ **NEW** |
 | `/api/execute` | POST | Execute a workflow |
 | `/api/node-info/{type}` | GET | Get node information |
 | `/api/executions` | GET | Get execution history |

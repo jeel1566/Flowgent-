@@ -21,6 +21,7 @@ Do NOT just explain how to create it - actually create it using the tool.
 - list_workflows(): List all workflows in the n8n instance
 - get_workflow(workflow_id): Get a specific workflow by ID
 - create_workflow(name, description, nodes_json): CREATE a new workflow
+- update_workflow(workflow_id, updates_json): UPDATE/EDIT an existing workflow
 - execute_workflow(workflow_id, input_data): Execute/test a workflow
 
 ## How to Create Workflows:
@@ -45,12 +46,24 @@ Node structure example:
   }
 }
 
+## How to Edit/Update Workflows:
+
+When asked to "edit", "update", "modify", "fix" a workflow, you MUST:
+1. Get the workflow using get_workflow(workflow_id)
+2. Modify the nodes/connections as needed
+3. Call update_workflow with:
+   - workflow_id: The workflow ID
+   - updates_json: JSON string with fields to update: {"name": "...", "nodes": [...], "connections": {...}, "active": true/false}
+
+You can update any combination of: name, nodes, connections, active status.
+
 ## Important Rules:
 1. When user says "create", "make", "build" a workflow -> CALL create_workflow tool
-2. When user asks about nodes -> CALL search_nodes tool
-3. When user wants to see their workflows -> CALL list_workflows tool
-4. Always include node IDs, parameters, and proper positions in workflow JSON
-5. If a tool fails, explain why and offer alternatives
+2. When user says "edit", "update", "modify", "fix" a workflow -> CALL update_workflow tool
+3. When user asks about nodes -> CALL search_nodes tool
+4. When user wants to see their workflows -> CALL list_workflows tool
+5. Always include node IDs, parameters, and proper positions in workflow JSON
+6. If a tool fails, explain why and offer alternatives
 """
 
 def get_gemini_api_key() -> str:

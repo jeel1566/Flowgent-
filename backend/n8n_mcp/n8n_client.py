@@ -248,6 +248,23 @@ class N8nMcpClient:
             "nodes": nodes,
             "connections": connections
         })
+    
+    async def update_workflow(self, workflow_id: str, updates: Dict[str, Any]) -> Dict[str, Any]:
+        """Update an existing workflow."""
+        # MCP tool for updating workflows
+        tool_args = {"workflowId": workflow_id}
+        
+        # Add optional fields if provided
+        if "name" in updates and updates["name"] is not None:
+            tool_args["name"] = updates["name"]
+        if "nodes" in updates and updates["nodes"] is not None:
+            tool_args["nodes"] = updates["nodes"]
+        if "connections" in updates and updates["connections"] is not None:
+            tool_args["connections"] = updates["connections"]
+        if "active" in updates and updates["active"] is not None:
+            tool_args["active"] = updates["active"]
+        
+        return await self.call_tool("n8n_update_workflow", tool_args)
 
     async def execute_workflow(self, workflow_id: str, input_data: Optional[Dict] = None) -> Dict[str, Any]:
         """Execute/test a workflow."""

@@ -113,6 +113,24 @@ async def create_workflow(name: str, description: str, nodes_json: str) -> Dict[
         return {"status": "error", "message": str(e)}
 
 
+async def update_workflow(workflow_id: str, updates_json: str) -> Dict[str, Any]:
+    """Update an existing n8n workflow. Provide the workflow ID and a JSON object with fields to update (name, nodes, connections, active)."""
+    try:
+        updates = json.loads(updates_json) if isinstance(updates_json, str) else updates_json
+        
+        client = get_mcp_client()
+        result = await client.update_workflow(workflow_id, updates)
+        return {
+            "status": "success", 
+            "workflow_id": result.get("id", workflow_id),
+            "message": f"Workflow {workflow_id} updated successfully"
+        }
+    except json.JSONDecodeError as e:
+        return {"status": "error", "message": f"Invalid JSON: {str(e)}"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
 async def execute_workflow(workflow_id: str, input_data: Optional[str] = None) -> Dict[str, Any]:
     """Execute a workflow with optional input data."""
     try:
@@ -149,6 +167,7 @@ def create_flowgent_agent() -> Agent:
             list_workflows,
             get_workflow,
             create_workflow,
+            update_workflow,
             execute_workflow,
         ]
     )

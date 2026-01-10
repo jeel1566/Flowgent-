@@ -52,6 +52,16 @@ class CreateWorkflowRequest(BaseModel):
     n8n_config: Optional[N8nConfig] = None
 
 
+class UpdateWorkflowRequest(BaseModel):
+    """Request to update an existing workflow."""
+    workflow_id: str
+    name: Optional[str] = None
+    nodes: Optional[List[Dict[str, Any]]] = None
+    connections: Optional[Dict[str, Any]] = None
+    active: Optional[bool] = None
+    n8n_config: Optional[N8nConfig] = None
+
+
 class ExecutionRequest(BaseModel):
     workflow_id: str
     input_data: Optional[Dict[str, Any]] = None
