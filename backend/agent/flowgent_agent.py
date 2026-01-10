@@ -10,7 +10,9 @@ from google.adk.sessions import InMemorySessionService
 from google.genai import types
 
 from agent.config import AGENT_MODEL, SYSTEM_INSTRUCTION, get_gemini_api_key
+from agent.context import get_n8n_credentials
 from n8n_mcp.n8n_client import get_mcp_client
+from n8n_mcp.direct_client import create_n8n_client
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +76,20 @@ async def validate_workflow_json(workflow_json: str) -> Dict[str, Any]:
 async def list_workflows() -> Dict[str, Any]:
     """List all workflows from connected n8n instance."""
     try:
+        # Check for direct n8n credentials first
+        n8n_creds = get_n8n_credentials()
+        if n8n_creds and n8n_creds.get("instance_url") and n8n_creds.get("api_key"):
+            logger.info("Using direct n8n client for list_workflows (agent)")
+            direct_client = create_n8n_client(n8n_creds["instance_url"], n8n_creds["api_key"])
+            workflows = await direct_client.list_workflows()
+            return {
+                "status": "success",
+                "count": len(workflows),
+                "workflows": [{"id": w.get("id"), "name": w.get("name"), "active": w.get("active")} for w in workflows]
+            }
+        
+        # Fall back to MCP
+        logger.info("Using MCP client for list_workflows (agent)")
         client = get_mcp_client()
         workflows = await client.list_workflows()
         return {
@@ -82,18 +98,28 @@ async def list_workflows() -> Dict[str, Any]:
             "workflows": [{"id": w.get("id"), "name": w.get("name"), "active": w.get("active")} for w in workflows]
         }
     except Exception as e:
+        logger.error(f"list_workflows failed: {e}", exc_info=True)
         return {"status": "error", "message": str(e)}
 
 
 async def get_workflow(workflow_id: str) -> Dict[str, Any]:
     """Get a specific workflow by ID from connected n8n instance."""
     try:
-        client = get_mcp_client()
-        workflow = await client.get_workflow(workflow_id)
+        n8n_creds = get_n8n_credentials()
+        if n8n_creds and n8n_creds.get("instance_url") and n8n_creds.get("api_key"):
+            logger.info(f"Using direct n8n client for get_workflow {workflow_id} (agent)")
+            direct_client = create_n8n_client(n8n_creds["instance_url"], n8n_creds["api_key"])
+            workflow = await direct_client.get_workflow(workflow_id)
+        else:
+            logger.info(f"Using MCP client for get_workflow {workflow_id} (agent)")
+            client = get_mcp_client()
+            workflow = await client.get_workflow(workflow_id)
+        
         if workflow:
             return {"status": "success", "workflow": workflow}
         return {"status": "error", "message": f"Workflow {workflow_id} not found"}
     except Exception as e:
+        logger.error(f"get_workflow failed for {workflow_id}: {e}", exc_info=True)
         return {"status": "error", "message": str(e)}
 
 
@@ -104,12 +130,21 @@ async def create_workflow(name: str, description: str, nodes_json: str) -> Dict[
         nodes = nodes_data.get("nodes", [])
         connections = nodes_data.get("connections", {})
         
-        client = get_mcp_client()
-        result = await client.create_workflow(name, nodes, connections)
+        n8n_creds = get_n8n_credentials()
+        if n8n_creds and n8n_creds.get("instance_url") and n8n_creds.get("api_key"):
+            logger.info(f"Using direct n8n client for create_workflow '{name}' (agent)")
+            direct_client = create_n8n_client(n8n_creds["instance_url"], n8n_creds["api_key"])
+            result = await direct_client.create_workflow(name, nodes, connections)
+        else:
+            logger.info(f"Using MCP client for create_workflow '{name}' (agent)")
+            client = get_mcp_client()
+            result = await client.create_workflow(name, nodes, connections)
+        
         return {"status": "success", "workflow_id": result.get("id"), "name": name}
     except json.JSONDecodeError as e:
         return {"status": "error", "message": f"Invalid JSON: {str(e)}"}
     except Exception as e:
+        logger.error(f"create_workflow failed for '{name}': {e}", exc_info=True)
         return {"status": "error", "message": str(e)}
 
 
@@ -118,16 +153,25 @@ async def update_workflow(workflow_id: str, updates_json: str) -> Dict[str, Any]
     try:
         updates = json.loads(updates_json) if isinstance(updates_json, str) else updates_json
         
-        client = get_mcp_client()
-        result = await client.update_workflow(workflow_id, updates)
+        n8n_creds = get_n8n_credentials()
+        if n8n_creds and n8n_creds.get("instance_url") and n8n_creds.get("api_key"):
+            logger.info(f"Using direct n8n client for update_workflow {workflow_id} (agent)")
+            direct_client = create_n8n_client(n8n_creds["instance_url"], n8n_creds["api_key"])
+            result = await direct_client.update_workflow(workflow_id, updates)
+        else:
+            logger.info(f"Using MCP client for update_workflow {workflow_id} (agent)")
+            client = get_mcp_client()
+            result = await client.update_workflow(workflow_id, updates)
+        
         return {
-            "status": "success", 
+            "status": "success",
             "workflow_id": result.get("id", workflow_id),
             "message": f"Workflow {workflow_id} updated successfully"
         }
     except json.JSONDecodeError as e:
         return {"status": "error", "message": f"Invalid JSON: {str(e)}"}
     except Exception as e:
+        logger.error(f"update_workflow failed for {workflow_id}: {e}", exc_info=True)
         return {"status": "error", "message": str(e)}
 
 
@@ -138,12 +182,21 @@ async def execute_workflow(workflow_id: str, input_data: Optional[str] = None) -
         if input_data:
             parsed_input = json.loads(input_data) if isinstance(input_data, str) else input_data
         
-        client = get_mcp_client()
-        result = await client.execute_workflow(workflow_id, parsed_input)
+        n8n_creds = get_n8n_credentials()
+        if n8n_creds and n8n_creds.get("instance_url") and n8n_creds.get("api_key"):
+            logger.info(f"Using direct n8n client for execute_workflow {workflow_id} (agent)")
+            direct_client = create_n8n_client(n8n_creds["instance_url"], n8n_creds["api_key"])
+            result = await direct_client.execute_workflow(workflow_id, parsed_input)
+        else:
+            logger.info(f"Using MCP client for execute_workflow {workflow_id} (agent)")
+            client = get_mcp_client()
+            result = await client.execute_workflow(workflow_id, parsed_input)
+        
         return {"status": "success", "execution_id": result.get("id"), "result": result}
     except json.JSONDecodeError as e:
         return {"status": "error", "message": f"Invalid input JSON: {str(e)}"}
     except Exception as e:
+        logger.error(f"execute_workflow failed for {workflow_id}: {e}", exc_info=True)
         return {"status": "error", "message": str(e)}
 
 

@@ -95,14 +95,22 @@ class DirectN8nClient:
     
     async def execute_workflow(self, workflow_id: str, input_data: Optional[Dict] = None) -> Dict[str, Any]:
         """Execute a workflow."""
-        # First get workflow to find trigger type
-        workflow = await self.get_workflow(workflow_id)
+        # Use n8n's execute endpoint
+        logger.info(f"Executing workflow {workflow_id} with data: {input_data is not None}")
         
-        # Try webhook execution
-        return await self._request(
-            "POST", f"/workflows/{workflow_id}/run",
-            json=input_data or {}
-        )
+        payload = {}
+        if input_data:
+            payload["data"] = input_data
+        
+        # Try the execute endpoint first
+        try:
+            result = await self._request("POST", f"/workflows/{workflow_id}/execute", json=payload)
+            logger.info(f"Workflow execution started: {result.get('id')}")
+            return result
+        except Exception as e:
+            # If execute fails, try run endpoint
+            logger.warning(f"Execute endpoint failed, trying run endpoint: {e}")
+            return await self._request("POST", f"/workflows/{workflow_id}/run", json=input_data or {})
     
     async def list_executions(self, workflow_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """List execution history."""
