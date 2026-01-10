@@ -166,6 +166,25 @@ class FlowgentAPI {
     }
 
     /**
+     * Update an existing workflow
+     */
+    async updateWorkflow(workflowId, updates) {
+        await this.reloadN8nConfig();
+
+        return this.request(`/api/workflows/${workflowId}`, {
+            method: 'PUT',
+            body: {
+                workflow_id: workflowId,
+                ...updates,
+                n8n_config: {
+                    instance_url: this.n8nInstanceUrl,
+                    api_key: this.n8nApiKey
+                }
+            }
+        });
+    }
+
+    /**
      * Get node information
      */
     async getNodeInfo(nodeType) {

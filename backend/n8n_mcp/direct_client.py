@@ -59,6 +59,40 @@ class DirectN8nClient:
         }
         return await self._request("POST", "/workflows", json=workflow_data)
     
+    async def update_workflow(self, workflow_id: str, updates: Dict[str, Any]) -> Dict[str, Any]:
+        """Update an existing workflow."""
+        # Get current workflow first to merge updates
+        current = await self.get_workflow(workflow_id)
+        
+        # Prepare update data - only include provided fields
+        workflow_data = {}
+        if "name" in updates and updates["name"] is not None:
+            workflow_data["name"] = updates["name"]
+        else:
+            workflow_data["name"] = current.get("name", "Untitled")
+        
+        if "nodes" in updates and updates["nodes"] is not None:
+            workflow_data["nodes"] = updates["nodes"]
+        else:
+            workflow_data["nodes"] = current.get("nodes", [])
+        
+        if "connections" in updates and updates["connections"] is not None:
+            workflow_data["connections"] = updates["connections"]
+        else:
+            workflow_data["connections"] = current.get("connections", {})
+        
+        if "active" in updates and updates["active"] is not None:
+            workflow_data["active"] = updates["active"]
+        else:
+            workflow_data["active"] = current.get("active", False)
+        
+        # Preserve other fields
+        if "settings" in current:
+            workflow_data["settings"] = current["settings"]
+        
+        logger.info(f"Updating workflow {workflow_id} with data: name={workflow_data.get('name')}, nodes={len(workflow_data.get('nodes', []))}")
+        return await self._request("PUT", f"/workflows/{workflow_id}", json=workflow_data)
+    
     async def execute_workflow(self, workflow_id: str, input_data: Optional[Dict] = None) -> Dict[str, Any]:
         """Execute a workflow."""
         # First get workflow to find trigger type
