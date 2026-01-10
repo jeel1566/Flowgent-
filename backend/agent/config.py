@@ -54,8 +54,19 @@ Node structure example:
 """
 
 def get_gemini_api_key() -> str:
+    """Get Gemini API key from environment with helpful error message."""
     # ADK typically uses GOOGLE_GENAI_API_KEY
     api_key = os.getenv("GOOGLE_GENAI_API_KEY") or os.getenv("GEMINI_API_KEY")
     if not api_key:
-        raise ValueError("GOOGLE_GENAI_API_KEY environment variable not set")
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(
+            "GOOGLE_GENAI_API_KEY environment variable not set. "
+            "Please set it in your .env file or environment variables. "
+            "Get your API key from: https://aistudio.google.com/apikey"
+        )
+        raise ValueError(
+            "GOOGLE_GENAI_API_KEY environment variable not set. "
+            "Please configure your API key in the .env file."
+        )
     return api_key

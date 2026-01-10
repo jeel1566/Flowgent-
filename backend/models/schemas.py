@@ -26,6 +26,9 @@ class WorkflowListItem(BaseModel):
     active: bool
     created_at: Optional[str] = Field(None, alias="createdAt")
     updated_at: Optional[str] = Field(None, alias="updatedAt")
+    
+    class Config:
+        populate_by_name = True
 
 
 class Workflow(BaseModel):
@@ -36,6 +39,9 @@ class Workflow(BaseModel):
     connections: Dict[str, Any] = {}
     created_at: Optional[str] = Field(None, alias="createdAt")
     updated_at: Optional[str] = Field(None, alias="updatedAt")
+    
+    class Config:
+        populate_by_name = True
 
 
 class CreateWorkflowRequest(BaseModel):
