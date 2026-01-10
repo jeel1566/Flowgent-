@@ -206,25 +206,54 @@ async def ensure_session(session_id: str):
 
 async def chat_with_agent(message: str, session_id: str = "default_session") -> str:
     """Send a message to the agent and get a response."""
-    runner = get_runner()
-    await ensure_session(session_id)
-    
-    user_content = types.Content(role="user", parts=[types.Part(text=message)])
-    
-    final_response = ""
     try:
-        async for event in runner.run_async(
-            user_id=USER_ID,
-            session_id=session_id,
-            new_message=user_content
-        ):
-            if event.is_final_response():
-                if event.content and event.content.parts:
-                    for part in event.content.parts:
-                        if hasattr(part, 'text') and part.text:
-                            final_response += part.text
-    except Exception as e:
-        logger.error(f"Error during agent run: {e}")
-        return f"Error processing request: {str(e)}"
+        runner = get_runner()
+        await ensure_session(session_id)
         
-    return final_response if final_response else "I processed your request but have no response."
+        user_content = types.Content(role="user", parts=[types.Part(text=message)])
+        
+        final_response = ""
+        try:
+            async for event in runner.run_async(
+                user_id=USER_ID,
+                session_id=session_id,
+                new_message=user_content
+            ):
+                if event.is_final_response():
+                    if event.content and event.content.parts:
+                        for part in event.content.parts:
+                            if hasattr(part, 'text') and part.text:
+                                final_response += part.text
+        except Exception as e:
+            logger.error(f"Error during agent run: {e}", exc_info=True)
+            
+            # Check if it's an API key error
+            error_msg = str(e)
+            if "api_key" in error_msg.lower() or "missing key" in error_msg.lower():
+                return (
+                    "⚠️ **API Key Not Configured**\n\n"
+                    "The Gemini API key is not set. Please configure it in your backend .env file:\n\n"
+                    "1. Get your API key from: https://aistudio.google.com/apikey\n"
+                    "2. Add it to backend/.env: `GOOGLE_GENAI_API_KEY=your-key-here`\n"
+                    "3. Restart the backend\n\n"
+                    "Until then, I can't provide AI-powered responses, but the n8n MCP tools should still work."
+                )
+            
+            return f"Error processing request: {str(e)}"
+            
+        return final_response if final_response else "I processed your request but have no response."
+    except ValueError as e:
+        # Handle API key configuration errors
+        error_msg = str(e)
+        if "GOOGLE_GENAI_API_KEY" in error_msg:
+            return (
+                "⚠️ **API Key Not Configured**\n\n"
+                "The Gemini API key is not set. Please configure it in your backend .env file:\n\n"
+                "1. Get your API key from: https://aistudio.google.com/apikey\n"
+                "2. Add it to backend/.env: `GOOGLE_GENAI_API_KEY=your-key-here`\n"
+                "3. Restart the backend"
+            )
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error in chat_with_agent: {e}", exc_info=True)
+        return f"An unexpected error occurred: {str(e)}"

@@ -22,13 +22,22 @@ class DirectN8nClient:
         """Make HTTP request to n8n API."""
         async with httpx.AsyncClient(timeout=30.0) as client:
             url = f"{self.base_url}{endpoint}"
-            logger.info(f"n8n API: {method} {url}")
+            logger.debug(f"n8n API: {method} {url}")
             
-            response = await client.request(
-                method, url, headers=self.headers, **kwargs
-            )
-            response.raise_for_status()
-            return response.json()
+            try:
+                response = await client.request(
+                    method, url, headers=self.headers, **kwargs
+                )
+                response.raise_for_status()
+                result = response.json()
+                logger.debug(f"n8n API response: {response.status_code}")
+                return result
+            except httpx.HTTPStatusError as e:
+                logger.error(f"n8n API error {e.response.status_code}: {e.response.text[:200]}")
+                raise
+            except Exception as e:
+                logger.error(f"n8n API request failed: {e}", exc_info=True)
+                raise
     
     async def list_workflows(self) -> List[Dict[str, Any]]:
         """List all workflows."""

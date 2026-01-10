@@ -22,11 +22,11 @@ const Dashboard = {
             const workflows = await api.getWorkflows();
             this.workflows = workflows;
 
-            if (workflows.length === 0) {
+            if (!workflows || workflows.length === 0) {
                 container.innerHTML = `
           <div class="empty-state">
             <p>No workflows found.</p>
-            <p class="hint">Create some workflows using the Chat tab!</p>
+            <p class="hint">Create some workflows using the Chat tab, or configure your n8n credentials in Settings!</p>
           </div>
         `;
                 return;
@@ -38,7 +38,25 @@ const Dashboard = {
                 container.appendChild(item);
             });
         } catch (error) {
-            container.innerHTML = `<div class="error">Failed to load workflows: ${error.message}</div>`;
+            console.error('Failed to load workflows:', error);
+            let errorMessage = error.message;
+            
+            // Provide helpful error messages
+            if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+                errorMessage = 'Cannot connect to backend. Is it running?';
+            } else if (error.message.includes('401') || error.message.includes('403')) {
+                errorMessage = 'Authentication failed. Check your n8n credentials in Settings.';
+            } else if (error.message.includes('500')) {
+                errorMessage = 'Backend error. Check backend logs for details.';
+            }
+            
+            container.innerHTML = `
+                <div class="error">
+                    <p><strong>⚠️ Failed to load workflows</strong></p>
+                    <p>${errorMessage}</p>
+                    <p class="hint">Check the Settings tab to configure your backend and n8n credentials.</p>
+                </div>
+            `;
         }
     },
 
@@ -102,6 +120,7 @@ Want to modify this workflow? Just ask me what changes you'd like to make!
                 container.innerHTML = `
           <div class="empty-state">
             <p>No executions yet.</p>
+            <p class="hint">Execute some workflows to see history here!</p>
           </div>
         `;
                 return;
@@ -113,7 +132,19 @@ Want to modify this workflow? Just ask me what changes you'd like to make!
                 container.appendChild(item);
             });
         } catch (error) {
-            container.innerHTML = `<div class="error">Failed to load executions: ${error.message}</div>`;
+            console.error('Failed to load executions:', error);
+            let errorMessage = error.message;
+            
+            if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+                errorMessage = 'Cannot connect to backend. Is it running?';
+            }
+            
+            container.innerHTML = `
+                <div class="error">
+                    <p><strong>⚠️ Failed to load executions</strong></p>
+                    <p>${errorMessage}</p>
+                </div>
+            `;
         }
     },
 

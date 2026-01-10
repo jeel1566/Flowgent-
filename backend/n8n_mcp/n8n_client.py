@@ -98,18 +98,26 @@ class N8nMcpClient:
     async def initialize(self) -> bool:
         """Initialize the MCP connection and get session ID."""
         if self._initialized and self._session_id:
+            logger.debug("MCP already initialized")
             return True
+        
+        if not self.api_key:
+            logger.warning("N8N_MCP_API_KEY not set - MCP features may not work")
+            return False
+            
         try:
+            logger.info(f"Initializing MCP connection to {self.mcp_url}")
             result = await self._call_mcp("initialize", {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {"tools": {}},
                 "clientInfo": {"name": "flowgent", "version": "2.0.0"}
             })
             self._initialized = True
-            logger.info(f"MCP initialized. Session: {self._session_id[:30] if self._session_id else 'None'}...")
+            session_info = self._session_id[:30] if self._session_id else 'None'
+            logger.info(f"MCP initialized successfully. Session: {session_info}...")
             return True
         except Exception as e:
-            logger.error(f"MCP initialization failed: {e}")
+            logger.error(f"MCP initialization failed: {e}", exc_info=True)
             return False
 
     async def check_connection(self) -> bool:
@@ -134,8 +142,12 @@ class N8nMcpClient:
         """Call an MCP tool."""
         try:
             if not self._initialized:
-                await self.initialize()
+                logger.info(f"Initializing MCP before calling tool {tool_name}")
+                initialized = await self.initialize()
+                if not initialized:
+                    raise Exception("MCP initialization failed - cannot call tools")
             
+            logger.debug(f"Calling MCP tool: {tool_name} with args: {arguments}")
             result = await self._call_mcp("tools/call", {
                 "name": tool_name,
                 "arguments": arguments or {}
@@ -149,12 +161,17 @@ class N8nMcpClient:
                         contents.append(item["text"])
                 if contents:
                     try:
-                        return json.loads(contents[0])
+                        parsed = json.loads(contents[0])
+                        logger.debug(f"Tool {tool_name} returned parsed JSON")
+                        return parsed
                     except json.JSONDecodeError:
+                        logger.debug(f"Tool {tool_name} returned text (not JSON)")
                         return {"text": "\n".join(contents)}
+            
+            logger.debug(f"Tool {tool_name} returned raw result")
             return result
         except Exception as e:
-            logger.error(f"Tool call failed ({tool_name}): {e}")
+            logger.error(f"Tool call failed ({tool_name}): {e}", exc_info=True)
             raise
 
     # ========== Core MCP Tools ==========
