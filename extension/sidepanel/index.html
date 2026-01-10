@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Flowgent</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="header">
+      <div class="logo">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M2 17L12 22L22 17" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <h1>Flowgent</h1>
+      </div>
+      <div class="connection-status" id="connectionStatus">
+        <span class="status-dot"></span>
+        <span class="status-text">Connecting...</span>
+      </div>
+    </header>
+
+    <!-- Tab Navigation -->
+    <nav class="tabs">
+      <button class="tab-button active" data-tab="chat">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        Chat
+      </button>
+      <button class="tab-button" data-tab="dashboard">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <rect x="3" y="3" width="7" height="7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <rect x="14" y="3" width="7" height="7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <rect x="14" y="14" width="7" height="7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <rect x="3" y="14" width="7" height="7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        Dashboard
+      </button>
+      <button class="tab-button" data-tab="settings">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <circle cx="12" cy="12" r="3" stroke-width="2"/>
+          <path d="M12 1v6m0 6v6M5.6 5.6l4.2 4.2m4.2 4.2l4.2 4.2M1 12h6m6 0h6M5.6 18.4l4.2-4.2m4.2-4.2l4.2-4.2" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        Settings
+      </button>
+    </nav>
+
+    <!-- Tab Content -->
+    <main class="content">
+      <!-- Chat Tab -->
+      <div class="tab-content active" id="chat-tab">
+        <div class="chat-container">
+          <div class="messages" id="messages">
+            <div class="welcome-message">
+              <h2>👋 Welcome to Flowgent!</h2>
+              <p>I'm your AI assistant for n8n workflow automation. I can help you:</p>
+              <ul>
+                <li>Create and modify workflows</li>
+                <li>Debug automation issues</li>
+                <li>Explain node functionality</li>
+                <li>Import workflow JSON</li>
+                <li>Suggest best practices</li>
+              </ul>
+              <p class="hint">Try asking: "Create a workflow that sends daily Slack notifications"</p>
+            </div>
+          </div>
+          <div class="input-container">
+            <textarea 
+              id="chatInput" 
+              placeholder="Ask me anything about n8n workflows..." 
+              rows="1"
+              autocomplete="off"
+            ></textarea>
+            <button id="sendButton" class="send-button">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Dashboard Tab -->
+      <div class="tab-content" id="dashboard-tab">
+        <div class="dashboard-container">
+          <section class="workflows-section">
+            <h2>Your Workflows</h2>
+            <div id="workflowsList" class="workflows-list">
+              <div class="loading">Loading workflows...</div>
+            </div>
+          </section>
+
+          <section class="executions-section">
+            <h2>Recent Executions</h2>
+            <div id="executionsList" class="executions-list">
+              <div class="loading">Loading executions...</div>
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <!-- Settings Tab -->
+      <div class="tab-content" id="settings-tab">
+        <div class="settings-container">
+          <h2>Settings</h2>
+          
+          <div class="setting-group">
+            <label for="backendUrl">Backend URL</label>
+            <input 
+              type="text" 
+              id="backendUrl" 
+              placeholder="http://localhost:8000"
+              class="setting-input"
+            />
+            <p class="setting-description">URL of the Flowgent backend server</p>
+          </div>
+
+          <div class="setting-group">
+            <label>Connection Status</label>
+            <div class="connection-test">
+              <div id="connectionDetails" class="connection-details">
+                <span class="status-indicator"></span>
+                <span id="connectionInfo">Not tested</span>
+              </div>
+              <button id="testConnection" class="button-secondary">Test Connection</button>
+            </div>
+          </div>
+
+          <button id="saveSettings" class="button-primary">Save Settings</button>
+
+          <div class="setting-group">
+            <h3>About</h3>
+            <p class="about-text">
+              <strong>Flowgent v1.0.0</strong><br>
+              AI-powered assistant for n8n automation workflows<br>
+              Built for Agentic+ Product Hackathon
+            </p>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Scripts -->
+  <script src="../lib/storage.js"></script>
+  <script src="../lib/api.js"></script>
+  <script src="chat.js"></script>
+  <script src="dashboard.js"></script>
+  <script src="settings.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

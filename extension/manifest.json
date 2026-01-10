@@ -1,0 +1,57 @@
+{
+    "manifest_version": 3,
+    "name": "Flowgent",
+    "version": "1.0.0",
+    "description": "AI-powered assistant for n8n automation workflows",
+    "icons": {
+        "16": "assets/icon16.png",
+        "48": "assets/icon48.png",
+        "128": "assets/icon128.png"
+    },
+    "permissions": [
+        "activeTab",
+        "storage",
+        "sidePanel",
+        "scripting"
+    ],
+    "host_permissions": [
+        "http://localhost:*/*",
+        "https://*/*"
+    ],
+    "background": {
+        "service_worker": "background.js"
+    },
+    "side_panel": {
+        "default_path": "sidepanel/index.html"
+    },
+    "content_scripts": [
+        {
+            "matches": [
+                "*://*/*"
+            ],
+            "js": [
+                "content/n8n-detector.js"
+            ],
+            "run_at": "document_idle"
+        }
+    ],
+    "action": {
+        "default_title": "Open Flowgent",
+        "default_icon": {
+            "16": "assets/icon16.png",
+            "48": "assets/icon48.png",
+            "128": "assets/icon128.png"
+        }
+    },
+    "web_accessible_resources": [
+        {
+            "resources": [
+                "content/tooltip.js",
+                "content/styles.css"
+            ],
+            "matches": [
+                "*://*/*"
+            ]
+        }
+    ]
+}

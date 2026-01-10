@@ -1,0 +1,164 @@
+/* Flowgent Tooltip Styles */
+
+.flowgent-tooltip {
+    position: fixed;
+    z-index: 999999;
+    max-width: 350px;
+    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+    border: 1px solid #334155;
+    border-radius: 12px;
+    box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.3), 0 8px 10px -6px rgb(0 0 0 / 0.3);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    font-size: 13px;
+    color: #f1f5f9;
+    pointer-events: none;
+    backdrop-filter: blur(10px);
+    animation: tooltipIn 0.2s ease-out;
+}
+
+@keyframes tooltipIn {
+    from {
+        opacity: 0;
+        transform: scale(0.95) translateY(-5px);
+    }
+
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+.flowgent-tooltip-content {
+    padding: 16px;
+}
+
+.tooltip-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #334155;
+}
+
+.tooltip-header h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 700;
+    color: #f1f5f9;
+}
+
+.tooltip-tag {
+    display: inline-block;
+    padding: 2px 8px;
+    background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+    color: white;
+    font-size: 10px;
+    font-weight: 600;
+    border-radius: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.tooltip-description {
+    margin-bottom: 12px;
+}
+
+.tooltip-description p {
+    margin: 0;
+    line-height: 1.6;
+    color: #cbd5e1;
+}
+
+.tooltip-section {
+    margin-bottom: 12px;
+}
+
+.tooltip-section h4 {
+    margin: 0 0 8px 0;
+    font-size: 12px;
+    font-weight: 600;
+    color: #e2e8f0;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.tooltip-section ul {
+    margin: 0;
+    padding-left: 20px;
+    list-style: none;
+}
+
+.tooltip-section li {
+    margin-bottom: 6px;
+    padding-left: 12px;
+    position: relative;
+    color: #cbd5e1;
+    line-height: 1.5;
+}
+
+.tooltip-section li::before {
+    content: '•';
+    position: absolute;
+    left: 0;
+    color: #6366f1;
+    font-weight: 700;
+}
+
+.tooltip-footer {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #334155;
+    text-align: center;
+}
+
+.tooltip-footer small {
+    color: #94a3b8;
+    font-size: 11px;
+}
+
+.flowgent-tooltip-loading {
+    padding: 20px;
+    text-align: center;
+    color: #94a3b8;
+}
+
+.flowgent-tooltip-loading::after {
+    content: '...';
+    display: inline-block;
+    animation: dots 1.5s steps(4, end) infinite;
+}
+
+@keyframes dots {
+
+    0%,
+    20% {
+        content: '.';
+    }
+
+    40% {
+        content: '..';
+    }
+
+    60%,
+    100% {
+        content: '...';
+    }
+}
+
+.flowgent-tooltip-error {
+    padding: 16px;
+    text-align: center;
+}
+
+.flowgent-tooltip-error strong {
+    display: block;
+    margin-bottom: 8px;
+    color: #ef4444;
+}
+
+.flowgent-tooltip-error p {
+    margin: 0;
+    color: #cbd5e1;
+    font-size: 12px;
+}
