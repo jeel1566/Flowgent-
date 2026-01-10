@@ -42,6 +42,33 @@ async function handleMessage(request, sender) {
             }
             return { success: true };
 
+        case 'fetchNodeInfo':
+            // Proxy request to backend
+            const settings = await chrome.storage.local.get('backendUrl');
+            const baseUrl = settings.backendUrl || 'http://localhost:8000';
+
+            try {
+                const response = await fetch(`${baseUrl}/api/node-info/${encodeURIComponent(data.nodeType)}`);
+                if (!response.ok) {
+                    throw new Error(`Backend error: ${response.status}`);
+                }
+                const info = await response.json();
+
+                // Cache it
+                const currentCache = await chrome.storage.local.get('nodeCache');
+                const updatedCache = currentCache.nodeCache || {};
+                updatedCache[data.nodeType] = {
+                    info: info,
+                    timestamp: Date.now()
+                };
+                await chrome.storage.local.set({ nodeCache: updatedCache });
+
+                return { success: true, info };
+            } catch (error) {
+                console.error('Fetch error:', error);
+                return { error: error.message };
+            }
+
         case 'getNodeInfo':
             // Check cache first
             const cache = await chrome.storage.local.get('nodeCache');
@@ -53,11 +80,11 @@ async function handleMessage(request, sender) {
 
                 // Cache valid for 24 hours
                 if (age < 24 * 60 * 60 * 1000) {
-                    return { cached: true, info: cached.info };
+                    return { success: true, info: cached.info, cached: true };
                 }
             }
 
-            return { cached: false };
+            return { success: false };
 
         case 'cacheNodeInfo':
             const currentCache = await chrome.storage.local.get('nodeCache');

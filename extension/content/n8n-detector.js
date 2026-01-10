@@ -295,6 +295,55 @@
         }).observe(document, { subtree: true, childList: true });
     }
 
+    // Listen for messages from injected script
+    window.addEventListener('message', async (event) => {
+        if (event.source !== window) return;
+
+        if (event.data.type === 'FLOWGENT_FETCH_NODE_INFO') {
+            const { nodeType, requestId } = event.data;
+
+            try {
+                // Check cache first via background
+                const cacheRes = await chrome.runtime.sendMessage({
+                    action: 'getNodeInfo',
+                    data: { nodeType }
+                });
+
+                if (cacheRes.success) {
+                    window.postMessage({
+                        type: 'FLOWGENT_NODE_INFO_RESPONSE',
+                        requestId,
+                        success: true,
+                        info: cacheRes.info
+                    }, '*');
+                    return;
+                }
+
+                // Fetch via background
+                const fetchRes = await chrome.runtime.sendMessage({
+                    action: 'fetchNodeInfo',
+                    data: { nodeType }
+                });
+
+                window.postMessage({
+                    type: 'FLOWGENT_NODE_INFO_RESPONSE',
+                    requestId,
+                    success: fetchRes.success,
+                    info: fetchRes.info,
+                    error: fetchRes.error
+                }, '*');
+
+            } catch (error) {
+                window.postMessage({
+                    type: 'FLOWGENT_NODE_INFO_RESPONSE',
+                    requestId,
+                    success: false,
+                    error: error.message
+                }, '*');
+            }
+        }
+    });
+
     // Run init
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', init);

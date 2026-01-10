@@ -1,6 +1,6 @@
 /**
  * Tooltip functionality for Information Hand feature
- * This script runs as a content script with Chrome API access
+ * This script runs in the page context and communicates with content script
  */
 
 (function () {
@@ -9,7 +9,7 @@
   let tooltip = null;
   let currentNodeType = null;
   let fetchTimeout = null;
-  const BACKEND_URL = 'http://localhost:8000';
+  const pendingRequests = new Map();
 
   // Create tooltip element
   function createTooltip() {
@@ -32,13 +32,14 @@
             font-size: 14px;
             box-shadow: 0 10px 40px rgba(0,0,0,0.4);
             backdrop-filter: blur(10px);
+            pointer-events: none; /* Let clicks pass through */
         `;
     document.body.appendChild(tooltip);
 
     return tooltip;
   }
 
-  // Show tooltip with node information
+  // Show tooltip
   async function showTooltip(nodeType, position) {
     if (currentNodeType === nodeType && tooltip && tooltip.style.display === 'block') {
       return;
@@ -55,7 +56,10 @@
     clearTimeout(fetchTimeout);
     fetchTimeout = setTimeout(async () => {
       try {
+        if (currentNodeType !== nodeType) return;
+
         const info = await fetchNodeInfo(nodeType);
+
         if (currentNodeType === nodeType) {
           displayNodeInfo(info);
         }
@@ -64,12 +68,12 @@
           tooltipEl.innerHTML = `
                         <div style="color: #f87171;">
                             <strong>⚠️ Unable to load</strong>
-                            <p style="margin: 5px 0 0; opacity: 0.7;">${error.message}</p>
+                            <p style="margin: 5px 0 0; opacity: 0.7; font-size: 12px;">${error.message}</p>
                         </div>
                     `;
         }
       }
-    }, 300);
+    }, 100);
   }
 
   // Hide tooltip
@@ -81,16 +85,28 @@
     }
   }
 
-  // Fetch node info from backend directly
-  async function fetchNodeInfo(nodeType) {
-    const response = await fetch(`${BACKEND_URL}/api/node-info/${encodeURIComponent(nodeType)}`);
-    if (!response.ok) {
-      throw new Error('Backend not available');
-    }
-    return await response.json();
+  // Fetch node info via content script -> background
+  function fetchNodeInfo(nodeType) {
+    return new Promise((resolve, reject) => {
+      const requestId = Math.random().toString(36).substring(7);
+
+      // Set timeout
+      const timeout = setTimeout(() => {
+        pendingRequests.delete(requestId);
+        reject(new Error('Timeout fetching node data'));
+      }, 5000);
+
+      pendingRequests.set(requestId, { resolve, reject, timeout });
+
+      window.postMessage({
+        type: 'FLOWGENT_FETCH_NODE_INFO',
+        nodeType,
+        requestId
+      }, '*');
+    });
   }
 
-  // Display node information in tooltip
+  // Display node information
   function displayNodeInfo(info) {
     if (!tooltip) return;
 
@@ -100,8 +116,8 @@
     tooltip.innerHTML = `
             <div>
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                    <h3 style="margin: 0; font-size: 16px; color: #fff;">${displayName}</h3>
-                    <span style="background: #8b5cf6; color: white; padding: 2px 8px; border-radius: 12px; font-size: 11px;">✨ Flowgent</span>
+                    <h3 style="margin: 0; font-size: 16px; color: #fff; font-weight: 600;">${displayName}</h3>
+                    <span style="background: rgba(139, 92, 246, 0.2); color: #c4b5fd; padding: 2px 8px; border-radius: 12px; font-size: 11px; border: 1px solid rgba(139, 92, 246, 0.4);">✨ Flowgent</span>
                 </div>
                 
                 <p style="margin: 0; color: rgba(255,255,255,0.85); line-height: 1.5;">
@@ -110,40 +126,62 @@
 
                 ${info.use_cases && info.use_cases.length > 0 ? `
                     <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.1);">
-                        <h4 style="margin: 0 0 8px; font-size: 12px; color: #8b5cf6;">💡 Use Cases</h4>
+                        <h4 style="margin: 0 0 8px; font-size: 12px; color: #a78bfa; text-transform: uppercase; letter-spacing: 0.5px;">💡 Use Cases</h4>
                         <ul style="margin: 0; padding-left: 16px; color: rgba(255,255,255,0.75); font-size: 13px;">
-                            ${info.use_cases.slice(0, 2).map(uc => `<li>${uc}</li>`).join('')}
+                            ${info.use_cases.slice(0, 2).map(uc => `<li style="margin-bottom: 4px;">${uc}</li>`).join('')}
                         </ul>
                     </div>
                 ` : ''}
 
-                <div style="margin-top: 10px; font-size: 11px; color: rgba(255,255,255,0.4);">
-                    Move mouse away to close
+                <div style="margin-top: 10px; font-size: 10px; color: rgba(255,255,255,0.3); text-align: right;">
+                    Flowgent AI • Move mouse to close
                 </div>
             </div>
         `;
 
-    // Adjust position if off-screen
+    adjustPosition();
+  }
+
+  function adjustPosition() {
+    if (!tooltip) return;
     const rect = tooltip.getBoundingClientRect();
     if (rect.right > window.innerWidth) {
-      tooltip.style.left = (window.innerWidth - rect.width - 10) + 'px';
+      tooltip.style.left = (window.innerWidth - rect.width - 20) + 'px';
     }
     if (rect.bottom > window.innerHeight) {
-      tooltip.style.top = (window.innerHeight - rect.height - 10) + 'px';
+      tooltip.style.top = (window.innerHeight - rect.height - 20) + 'px';
     }
   }
 
-  // Listen for messages from content script
+  // Listen for responses from content script
   window.addEventListener('message', (event) => {
     if (event.source !== window) return;
 
-    if (event.data.type === 'FLOWGENT_SHOW_TOOLTIP') {
+    if (event.data.type === 'FLOWGENT_NODE_INFO_RESPONSE') {
+      const { requestId, success, info, error } = event.data;
+
+      const pending = pendingRequests.get(requestId);
+      if (pending) {
+        clearTimeout(pending.timeout);
+        pendingRequests.delete(requestId);
+
+        if (success) {
+          pending.resolve(info);
+        } else {
+          pending.resolve({ // Degrade gracefully
+            display_name: currentNodeType,
+            description: error || "Could not load info",
+            use_cases: []
+          });
+        }
+      }
+    } else if (event.data.type === 'FLOWGENT_SHOW_TOOLTIP') {
       showTooltip(event.data.nodeType, event.data.position);
     } else if (event.data.type === 'FLOWGENT_HIDE_TOOLTIP') {
       hideTooltip();
     }
   });
 
-  console.log('Flowgent: Tooltip script loaded');
+  console.log('Flowgent: Tooltip script (v2) loaded');
 
 })();
