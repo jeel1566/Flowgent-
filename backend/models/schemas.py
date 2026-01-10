@@ -1,14 +1,24 @@
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 
+
+class N8nConfig(BaseModel):
+    """n8n instance configuration from frontend."""
+    instance_url: Optional[str] = None
+    api_key: Optional[str] = None
+
+
 class ChatMessage(BaseModel):
     message: str
     context: Optional[Dict[str, Any]] = None
+    n8n_config: Optional[N8nConfig] = None
+
 
 class ChatResponse(BaseModel):
     response: str
     workflow_data: Optional[Dict[str, Any]] = None
     action: Optional[str] = None
+
 
 class WorkflowListItem(BaseModel):
     id: str
@@ -16,6 +26,7 @@ class WorkflowListItem(BaseModel):
     active: bool
     created_at: Optional[str] = Field(None, alias="createdAt")
     updated_at: Optional[str] = Field(None, alias="updatedAt")
+
 
 class Workflow(BaseModel):
     id: Optional[str] = None
@@ -26,9 +37,20 @@ class Workflow(BaseModel):
     created_at: Optional[str] = Field(None, alias="createdAt")
     updated_at: Optional[str] = Field(None, alias="updatedAt")
 
+
+class CreateWorkflowRequest(BaseModel):
+    """Request to create a workflow."""
+    name: str
+    nodes: List[Dict[str, Any]] = []
+    connections: Dict[str, Any] = {}
+    n8n_config: Optional[N8nConfig] = None
+
+
 class ExecutionRequest(BaseModel):
     workflow_id: str
     input_data: Optional[Dict[str, Any]] = None
+    n8n_config: Optional[N8nConfig] = None
+
 
 class ExecutionResponse(BaseModel):
     execution_id: str
@@ -38,6 +60,7 @@ class ExecutionResponse(BaseModel):
     started_at: Optional[str] = None
     finished_at: Optional[str] = None
 
+
 class NodeInfo(BaseModel):
     node_type: str
     display_name: str
@@ -46,6 +69,7 @@ class NodeInfo(BaseModel):
     use_cases: List[str] = []
     best_practices: List[str] = []
     example_config: Optional[Dict[str, Any]] = None
+
 
 class HealthCheck(BaseModel):
     status: str

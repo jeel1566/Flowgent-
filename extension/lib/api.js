@@ -5,17 +5,24 @@
 class FlowgentAPI {
     constructor() {
         this.baseUrl = null;
+        this.n8nInstanceUrl = null;
+        this.n8nApiKey = null;
         this.initialized = false;
     }
 
     /**
-     * Initialize the API client with backend URL from storage
+     * Initialize the API client with backend URL and n8n config from storage
      */
     async init() {
         if (this.initialized) return;
 
-        const { backendUrl } = await chrome.storage.local.get('backendUrl');
+        const { backendUrl, n8nInstanceUrl, n8nApiKey } = await chrome.storage.local.get([
+            'backendUrl', 'n8nInstanceUrl', 'n8nApiKey'
+        ]);
+
         this.baseUrl = backendUrl || 'http://localhost:8000';
+        this.n8nInstanceUrl = n8nInstanceUrl || '';
+        this.n8nApiKey = n8nApiKey || '';
         this.initialized = true;
     }
 
@@ -25,6 +32,15 @@ class FlowgentAPI {
     async setBackendUrl(url) {
         this.baseUrl = url;
         await chrome.storage.local.set({ backendUrl: url });
+    }
+
+    /**
+     * Reload n8n config from storage
+     */
+    async reloadN8nConfig() {
+        const { n8nInstanceUrl, n8nApiKey } = await chrome.storage.local.get(['n8nInstanceUrl', 'n8nApiKey']);
+        this.n8nInstanceUrl = n8nInstanceUrl || '';
+        this.n8nApiKey = n8nApiKey || '';
     }
 
     /**
@@ -62,12 +78,22 @@ class FlowgentAPI {
     }
 
     /**
-     * Send a chat message to the AI
+     * Send a chat message to the AI (includes n8n config)
      */
     async chat(message, context = null) {
+        await this.reloadN8nConfig();
+
         return this.request('/api/chat', {
             method: 'POST',
-            body: { message, context }
+            body: {
+                message,
+                context,
+                // Include n8n config so backend can use it
+                n8n_config: {
+                    instance_url: this.n8nInstanceUrl,
+                    api_key: this.n8nApiKey
+                }
+            }
         });
     }
 
@@ -75,23 +101,67 @@ class FlowgentAPI {
      * Get all workflows
      */
     async getWorkflows() {
-        return this.request('/api/workflows');
+        await this.reloadN8nConfig();
+
+        return this.request('/api/workflows', {
+            method: 'GET',
+            headers: {
+                'X-N8N-Instance-URL': this.n8nInstanceUrl,
+                'X-N8N-API-Key': this.n8nApiKey
+            }
+        });
     }
 
     /**
      * Get a specific workflow
      */
     async getWorkflow(workflowId) {
-        return this.request(`/api/workflows/${workflowId}`);
+        await this.reloadN8nConfig();
+
+        return this.request(`/api/workflows/${workflowId}`, {
+            headers: {
+                'X-N8N-Instance-URL': this.n8nInstanceUrl,
+                'X-N8N-API-Key': this.n8nApiKey
+            }
+        });
     }
 
     /**
      * Execute a workflow
      */
     async executeWorkflow(workflowId, inputData = null) {
+        await this.reloadN8nConfig();
+
         return this.request('/api/execute', {
             method: 'POST',
-            body: { workflow_id: workflowId, input_data: inputData }
+            body: {
+                workflow_id: workflowId,
+                input_data: inputData,
+                n8n_config: {
+                    instance_url: this.n8nInstanceUrl,
+                    api_key: this.n8nApiKey
+                }
+            }
+        });
+    }
+
+    /**
+     * Create a workflow
+     */
+    async createWorkflow(name, nodes, connections) {
+        await this.reloadN8nConfig();
+
+        return this.request('/api/workflows', {
+            method: 'POST',
+            body: {
+                name,
+                nodes,
+                connections,
+                n8n_config: {
+                    instance_url: this.n8nInstanceUrl,
+                    api_key: this.n8nApiKey
+                }
+            }
         });
     }
 
@@ -106,8 +176,15 @@ class FlowgentAPI {
      * Get execution history
      */
     async getExecutions(workflowId = null) {
+        await this.reloadN8nConfig();
+
         const query = workflowId ? `?workflow_id=${workflowId}` : '';
-        return this.request(`/api/executions${query}`);
+        return this.request(`/api/executions${query}`, {
+            headers: {
+                'X-N8N-Instance-URL': this.n8nInstanceUrl,
+                'X-N8N-API-Key': this.n8nApiKey
+            }
+        });
     }
 
     /**

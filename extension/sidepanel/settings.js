@@ -13,10 +13,21 @@ const Settings = {
     async loadSettings() {
         const backendUrl = await Storage.getBackendUrl();
         document.getElementById('backendUrl').value = backendUrl;
+
+        // Load n8n settings
+        const { n8nInstanceUrl, n8nApiKey } = await chrome.storage.local.get(['n8nInstanceUrl', 'n8nApiKey']);
+        if (n8nInstanceUrl) {
+            document.getElementById('n8nInstanceUrl').value = n8nInstanceUrl;
+        }
+        if (n8nApiKey) {
+            document.getElementById('n8nApiKey').value = n8nApiKey;
+        }
     },
 
     async saveSettings() {
         const backendUrl = document.getElementById('backendUrl').value.trim();
+        const n8nInstanceUrl = document.getElementById('n8nInstanceUrl').value.trim();
+        const n8nApiKey = document.getElementById('n8nApiKey').value.trim();
 
         if (!backendUrl) {
             alert('Please enter a backend URL');
@@ -24,8 +35,15 @@ const Settings = {
         }
 
         try {
+            // Save backend URL
             await Storage.setBackendUrl(backendUrl);
             await api.setBackendUrl(backendUrl);
+
+            // Save n8n settings
+            await chrome.storage.local.set({
+                n8nInstanceUrl: n8nInstanceUrl,
+                n8nApiKey: n8nApiKey
+            });
 
             // Show success
             const button = document.getElementById('saveSettings');
@@ -60,7 +78,17 @@ const Settings = {
 
             if (health.status === 'healthy') {
                 indicator.classList.add('connected');
-                infoText.textContent = `Connected (v${health.version})`;
+                let statusText = `Backend Connected (v${health.version})`;
+
+                // Check n8n connection
+                const { n8nInstanceUrl, n8nApiKey } = await chrome.storage.local.get(['n8nInstanceUrl', 'n8nApiKey']);
+                if (n8nInstanceUrl && n8nApiKey) {
+                    statusText += ' | n8n: Configured';
+                } else {
+                    statusText += ' | n8n: Not configured';
+                }
+
+                infoText.textContent = statusText;
 
                 // Update header status
                 const headerStatus = document.getElementById('connectionStatus');
