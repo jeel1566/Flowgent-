@@ -73,8 +73,11 @@ class ExecutionResponse(BaseModel):
     success: bool
     data: Optional[Any] = None
     error: Optional[Any] = None
-    started_at: Optional[str] = None
-    finished_at: Optional[str] = None
+    started_at: Optional[str] = Field(None, alias="startedAt")
+    finished_at: Optional[str] = Field(None, alias="finishedAt")
+    
+    class Config:
+        populate_by_name = True
 
 
 class NodeInfo(BaseModel):

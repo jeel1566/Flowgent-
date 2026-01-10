@@ -93,8 +93,8 @@
       // Set timeout
       const timeout = setTimeout(() => {
         pendingRequests.delete(requestId);
-        reject(new Error('Timeout fetching node data'));
-      }, 5000);
+        reject(new Error('Timeout fetching node data (30s)'));
+      }, 30000);
 
       pendingRequests.set(requestId, { resolve, reject, timeout });
 

@@ -79,6 +79,8 @@ async def list_workflows(
         ]
     except Exception as e:
         logger.error(f"Failed to list workflows: {e}", exc_info=True)
+        if "401" in str(e) or "403" in str(e):
+            raise HTTPException(status_code=401, detail="Authentication failed with n8n. Check your API key.")
         raise HTTPException(status_code=500, detail=f"Failed to retrieve workflows: {str(e)}")
 
 
@@ -301,4 +303,6 @@ async def list_executions(
         return executions
     except Exception as e:
         logger.error(f"Failed to list executions: {e}", exc_info=True)
+        if "401" in str(e) or "403" in str(e):
+            raise HTTPException(status_code=401, detail="Authentication failed with n8n. Check your API key.")
         raise HTTPException(status_code=500, detail=f"Failed to retrieve executions: {str(e)}")
