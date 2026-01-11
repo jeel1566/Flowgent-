@@ -16,6 +16,8 @@ if _api_key:
 # Simple Gemini client without ADK
 import google.genai as genai
 from google.genai import types
+from google.adk import Agent, Runner
+from google.adk.sessions import InMemorySessionService
 
 from agent.config import AGENT_MODEL, SYSTEM_INSTRUCTION, get_gemini_api_key
 from agent.context import get_n8n_credentials
