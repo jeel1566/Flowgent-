@@ -233,70 +233,100 @@ async def execute_workflow(req: ExecutionRequest):
         raise HTTPException(status_code=500, detail=f"Failed to execute workflow: {str(e)}")
 
 
-@router.get("/node-info/{node_type:path}", response_model=NodeInfo)
+@router.get("/node-info/{node_type:path}")
 async def get_node_info(node_type: str):
-    """Get detailed information about an n8n node type."""
+    """Get fast node information for Information Hand tooltip using MCP."""
     try:
-        # Check cache first
+        # Check cache first for speed
         if node_type in NODE_INFO_CACHE:
             logger.info(f"Using cached info for: {node_type}")
             return NODE_INFO_CACHE[node_type]
 
-        logger.info(f"Getting node info for: {node_type}")
+        logger.info(f"Getting fast node info for: {node_type}")
+        
+        # Use MCP client directly for speed (not slow chat)
         client = get_mcp_client()
         info = await client.get_node_info(node_type)
         
-        result = None
-        
         if info:
-            logger.info(f"Successfully retrieved node info for {node_type}")
-            # Parse MCP response - handle different response formats
+            logger.info(f"Successfully retrieved MCP node info for {node_type}")
+            
+            # Parse and format the response for tooltip
             if isinstance(info, dict):
-                description = info.get("description", info.get("text", ""))
+                # Extract basic info
                 display_name = info.get("displayName", info.get("name", node_type.split(".")[-1]))
-                use_cases = info.get("use_cases", info.get("useCases", []))
-                best_practices = info.get("best_practices", info.get("bestPractices", []))
+                description = info.get("description", info.get("text", info.get("summary", "")))
+                
+                # Generate "how it works" and "what it does" from available data
+                how_it_works = ""
+                what_it_does = ""
+                
+                # Try to extract meaningful content from various fields
+                if "properties" in info:
+                    # Use parameter descriptions to understand functionality
+                    params = info["properties"]
+                    if params:
+                        how_it_works = f"Operates with {len(params)} parameters including {', '.join(list(params.keys())[:3])}"
+                
+                if "inputs" in info:
+                    inputs = info["inputs"]
+                    if isinstance(inputs, list) and inputs:
+                        how_it_works += f", processes {len(inputs)} input types"
+                
+                # Default descriptions if we can't extract meaningful content
+                if not how_it_works:
+                    how_it_works = f"Processes data according to its configuration and parameters"
+                
+                if not what_it_does:
+                    what_it_does = f"Performs {display_name.lower()} operations within automation workflows"
+                
+                # Format response for tooltip
+                result = {
+                    "name": display_name,
+                    "description": description[:100] if description else f"Node for {display_name.lower()} operations",
+                    "howItWorks": how_it_works[:200] if how_it_works else f"Configurable {display_name.lower()} node",
+                    "whatItDoes": what_it_does[:200] if what_it_does else f"Executes {display_name.lower()} tasks in workflows",
+                    "nodeType": node_type,
+                    "icon": info.get("icon", "")
+                }
             else:
-                description = str(info)
-                display_name = node_type.split(".")[-1]
-                use_cases = []
-                best_practices = []
-            
-            result = NodeInfo(
-                node_type=node_type,
-                display_name=display_name,
-                description=description,
-                parameters=[],
-                use_cases=use_cases if isinstance(use_cases, list) else [],
-                best_practices=best_practices if isinstance(best_practices, list) else [],
-                example_config=None
-            )
+                # Fallback for non-dict responses
+                result = {
+                    "name": node_type.split(".")[-1].replace("-", " ").title(),
+                    "description": str(info)[:100],
+                    "howItWorks": f"Performs {node_type.split('.')[-1].replace('-', ' ')} operations",
+                    "whatItDoes": f"Executes {node_type.split('.')[-1].replace('-', ' ')} tasks in workflows",
+                    "nodeType": node_type,
+                    "icon": ""
+                }
         else:
-            logger.warning(f"No MCP info for {node_type}, falling back to AI")
-            # Fall back to AI-generated info
-            response = await chat_with_agent(
-                f"Provide a brief description and 2-3 use cases for the n8n node type: {node_type}. Be concise.",
-                session_id="node_info_session"
-            )
-            
-            result = NodeInfo(
-                node_type=node_type,
-                display_name=node_type.split(".")[-1].replace("-", " ").title(),
-                description=response,
-                parameters=[],
-                use_cases=[],
-                best_practices=[],
-                example_config=None
-            )
+            logger.warning(f"No MCP info for {node_type}, using fallback")
+            # Fast fallback without slow AI call
+            result = {
+                "name": node_type.split(".")[-1].replace("-", " ").title(),
+                "description": f"Node for {node_type.split('.')[-1].replace('-', ' ').lower()} operations",
+                "howItWorks": f"Configurable {node_type.split('.')[-1].replace('-', ' ').lower()} node for workflow automation",
+                "whatItDoes": f"Executes {node_type.split('.')[-1].replace('-', ' ').lower()} tasks within automation workflows",
+                "nodeType": node_type,
+                "icon": ""
+            }
         
-        # Cache the result
-        if result:
-            NODE_INFO_CACHE[node_type] = result
-            return result
+        # Cache the result for future fast access
+        NODE_INFO_CACHE[node_type] = result
+        logger.info(f"Cached node info for: {node_type}")
+        return result
             
     except Exception as e:
         logger.error(f"Failed to get node info for {node_type}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve node info: {str(e)}")
+        # Return fast fallback instead of error
+        return {
+            "name": node_type.split(".")[-1].replace("-", " ").title(),
+            "description": f"Node for {node_type.split('.')[-1].replace('-', ' ').lower()} operations",
+            "howItWorks": f"Configurable {node_type.split('.')[-1].replace('-', ' ').lower()} node",
+            "whatItDoes": f"Executes {node_type.split('.')[-1].replace('-', ' ').lower()} tasks in workflows",
+            "nodeType": node_type,
+            "icon": ""
+        }
 
 
 @router.get("/executions")
