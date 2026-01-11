@@ -14,7 +14,26 @@ from n8n_mcp.direct_client import create_n8n_client
 logger = logging.getLogger(__name__)
 
 # Cache for node info to improve performance and reduce API/LLM calls
-NODE_INFO_CACHE: Dict[str, NodeInfo] = {}
+NODE_INFO_CACHE: Dict[str, NodeInfo] = {
+    "n8n-nodes-base.manualTrigger": NodeInfo(
+        node_type="n8n-nodes-base.manualTrigger",
+        display_name="Manual Trigger",
+        description="Starts a workflow manually from the n8n interface.",
+        parameters=[], use_cases=["Testing workflows", "On-demand execution"], best_practices=[], example_config=None
+    ),
+    "n8n-nodes-base.httpRequest": NodeInfo(
+        node_type="n8n-nodes-base.httpRequest",
+        display_name="HTTP Request",
+        description="Makes an HTTP request to an API or website.",
+        parameters=[], use_cases=["Fetching data from APIs", "Sending webhooks"], best_practices=["Use authentication"], example_config=None
+    ),
+    "n8n-nodes-base.set": NodeInfo(
+        node_type="n8n-nodes-base.set",
+        display_name="Set",
+        description="Sets values on items and removes other values.",
+        parameters=[], use_cases=["Creating variables", "Mocking data"], best_practices=[], example_config=None
+    )
+}
 router = APIRouter(prefix="/api", tags=["api"])
 
 
