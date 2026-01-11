@@ -10,6 +10,7 @@
   let currentNodeType = null;
   let fetchTimeout = null;
   const pendingRequests = new Map();
+  const cache = {}; // Simple in-memory cache for fast repeat requests
 
   // Create tooltip element
   function createTooltip() {
@@ -87,6 +88,11 @@
 
   // Fetch node info via content script -> background
   function fetchNodeInfo(nodeType) {
+    // Return cached result immediately if available
+    if (cache[nodeType]) {
+      return Promise.resolve(cache[nodeType]);
+    }
+
     return new Promise((resolve, reject) => {
       const requestId = Math.random().toString(36).substring(7);
 
@@ -111,7 +117,9 @@
     if (!tooltip) return;
 
     const description = info.description || 'No description available';
-    const displayName = info.display_name || info.node_type || 'Node';
+    const displayName = info.name || info.display_name || info.node_type || 'Node';
+    const howItWorks = info.howItWorks || '';
+    const whatItDoes = info.whatItDoes || '';
 
     tooltip.innerHTML = `
             <div>
@@ -120,16 +128,25 @@
                     <span style="background: rgba(139, 92, 246, 0.2); color: #c4b5fd; padding: 2px 8px; border-radius: 12px; font-size: 11px; border: 1px solid rgba(139, 92, 246, 0.4);">✨ Flowgent</span>
                 </div>
                 
-                <p style="margin: 0; color: rgba(255,255,255,0.85); line-height: 1.5;">
-                    ${description.substring(0, 200)}${description.length > 200 ? '...' : ''}
+                <p style="margin: 0 0 12px; color: rgba(255,255,255,0.85); line-height: 1.5; font-size: 13px;">
+                    ${description.substring(0, 150)}${description.length > 150 ? '...' : ''}
                 </p>
 
-                ${info.use_cases && info.use_cases.length > 0 ? `
-                    <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.1);">
-                        <h4 style="margin: 0 0 8px; font-size: 12px; color: #a78bfa; text-transform: uppercase; letter-spacing: 0.5px;">💡 Use Cases</h4>
-                        <ul style="margin: 0; padding-left: 16px; color: rgba(255,255,255,0.75); font-size: 13px;">
-                            ${info.use_cases.slice(0, 2).map(uc => `<li style="margin-bottom: 4px;">${uc}</li>`).join('')}
-                        </ul>
+                ${howItWorks ? `
+                    <div style="margin-bottom: 10px;">
+                        <h4 style="margin: 0 0 6px; font-size: 12px; color: #a78bfa; text-transform: uppercase; letter-spacing: 0.5px;">⚙️ How it works</h4>
+                        <p style="margin: 0; color: rgba(255,255,255,0.75); font-size: 12px; line-height: 1.4;">
+                            ${howItWorks.substring(0, 200)}${howItWorks.length > 200 ? '...' : ''}
+                        </p>
+                    </div>
+                ` : ''}
+
+                ${whatItDoes ? `
+                    <div style="margin-bottom: 10px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.1);">
+                        <h4 style="margin: 0 0 6px; font-size: 12px; color: #a78bfa; text-transform: uppercase; letter-spacing: 0.5px;">🎯 What it does</h4>
+                        <p style="margin: 0; color: rgba(255,255,255,0.75); font-size: 12px; line-height: 1.4;">
+                            ${whatItDoes.substring(0, 200)}${whatItDoes.length > 200 ? '...' : ''}
+                        </p>
                     </div>
                 ` : ''}
 
@@ -165,14 +182,21 @@
         clearTimeout(pending.timeout);
         pendingRequests.delete(requestId);
 
-        if (success) {
+        if (success && info) {
+          // Cache the response for future fast access
+          cache[info.nodeType || info.name || 'unknown'] = info;
           pending.resolve(info);
         } else {
-          pending.resolve({ // Degrade gracefully
+          const fallbackInfo = {
             display_name: currentNodeType,
             description: error || "Could not load info",
+            howItWorks: "Configuration node for workflow automation",
+            whatItDoes: "Performs automated tasks within workflows",
             use_cases: []
-          });
+          };
+          // Cache the fallback too to avoid repeated failures
+          cache[currentNodeType] = fallbackInfo;
+          pending.resolve(fallbackInfo);
         }
       }
     } else if (event.data.type === 'FLOWGENT_SHOW_TOOLTIP') {

@@ -13,10 +13,8 @@ if _api_key:
     os.environ["GOOGLE_GENAI_API_KEY"] = _api_key
     os.environ["GOOGLE_API_KEY"] = _api_key  # ADK may also check this
 
-# ADK imports
-from google.adk.agents import Agent
-from google.adk.runners import Runner
-from google.adk.sessions import InMemorySessionService
+# Simple Gemini client without ADK
+import google.genai as genai
 from google.genai import types
 
 from agent.config import AGENT_MODEL, SYSTEM_INSTRUCTION, get_gemini_api_key
@@ -25,6 +23,16 @@ from n8n_mcp.n8n_client import get_mcp_client
 from n8n_mcp.direct_client import create_n8n_client
 
 logger = logging.getLogger(__name__)
+
+# Simple session management
+USER_ID = "flowgent_user"
+_sessions = {}
+
+async def ensure_session(session_id: str):
+    """Ensure session exists for the given ID."""
+    if session_id not in _sessions:
+        # For simple client, we don't need complex session management
+        pass
 
 # ============= Core MCP Tools (Work without n8n API) =============
 
