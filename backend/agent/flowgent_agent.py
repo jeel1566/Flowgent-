@@ -1,7 +1,17 @@
 import os
 import json
 import logging
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
+
+# Load environment variables FIRST, before any ADK imports
+from dotenv import load_dotenv
+load_dotenv()
+
+# Ensure API key is in environment (ADK reads from GOOGLE_GENAI_API_KEY or GOOGLE_API_KEY)
+_api_key = os.getenv("GOOGLE_GENAI_API_KEY") or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+if _api_key:
+    os.environ["GOOGLE_GENAI_API_KEY"] = _api_key
+    os.environ["GOOGLE_API_KEY"] = _api_key  # ADK may also check this
 
 # ADK imports
 from google.adk.agents import Agent
@@ -123,12 +133,57 @@ async def get_workflow(workflow_id: str) -> Dict[str, Any]:
         return {"status": "error", "message": str(e)}
 
 
+def _auto_connect_nodes(nodes: List[Dict]) -> Dict[str, Any]:
+    """
+    Automatically connect nodes in a linear sequence (1->2->3).
+    Useful when AI fails to generate connections.
+    """
+    if not nodes or len(nodes) < 2:
+        return {}
+    
+    connections = {}
+    for i in range(len(nodes) - 1):
+        source_node = nodes[i].get("name")
+        target_node = nodes[i+1].get("name")
+        
+        if source_node and target_node:
+            if source_node not in connections:
+                connections[source_node] = {}
+            
+            # Default to 'main' output and input
+            connections[source_node]["main"] = [
+                [
+                    {
+                        "node": target_node,
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+    return connections
+
+
 async def create_workflow(name: str, description: str, nodes_json: str) -> Dict[str, Any]:
     """Create a new n8n workflow from JSON definition."""
     try:
         nodes_data = json.loads(nodes_json) if isinstance(nodes_json, str) else nodes_json
-        nodes = nodes_data.get("nodes", [])
-        connections = nodes_data.get("connections", {})
+        
+        # Handle if AI passed just a list of nodes
+        if isinstance(nodes_data, list):
+            nodes = nodes_data
+            connections = {}
+        else:
+            nodes = nodes_data.get("nodes", [])
+            connections = nodes_data.get("connections", {})
+        
+        # Ensure nodes is a list
+        if not isinstance(nodes, list):
+            nodes = []
+            
+        # AUTO-CONNECT: If we have nodes but no connections, connect them linearly
+        if nodes and not connections and len(nodes) > 1:
+            logger.info(f"Auto-connecting {len(nodes)} nodes for workflow '{name}'")
+            connections = _auto_connect_nodes(nodes)
         
         n8n_creds = get_n8n_credentials()
         if n8n_creds and n8n_creds.get("instance_url") and n8n_creds.get("api_key"):
@@ -183,14 +238,21 @@ async def execute_workflow(workflow_id: str, input_data: Optional[str] = None) -
             parsed_input = json.loads(input_data) if isinstance(input_data, str) else input_data
         
         n8n_creds = get_n8n_credentials()
+        
+        # Try direct n8n client first, but fall back to MCP if it fails
         if n8n_creds and n8n_creds.get("instance_url") and n8n_creds.get("api_key"):
-            logger.info(f"Using direct n8n client for execute_workflow {workflow_id} (agent)")
-            direct_client = create_n8n_client(n8n_creds["instance_url"], n8n_creds["api_key"])
-            result = await direct_client.execute_workflow(workflow_id, parsed_input)
-        else:
-            logger.info(f"Using MCP client for execute_workflow {workflow_id} (agent)")
-            client = get_mcp_client()
-            result = await client.execute_workflow(workflow_id, parsed_input)
+            try:
+                logger.info(f"Trying direct n8n client for execute_workflow {workflow_id}")
+                direct_client = create_n8n_client(n8n_creds["instance_url"], n8n_creds["api_key"])
+                result = await direct_client.execute_workflow(workflow_id, parsed_input)
+                return {"status": "success", "execution_id": result.get("id"), "result": result}
+            except Exception as direct_error:
+                logger.warning(f"Direct n8n execute failed, falling back to MCP: {direct_error}")
+        
+        # Fall back to MCP for execution
+        logger.info(f"Using MCP client for execute_workflow {workflow_id} (agent)")
+        client = get_mcp_client()
+        result = await client.execute_workflow(workflow_id, parsed_input)
         
         return {"status": "success", "execution_id": result.get("id"), "result": result}
     except json.JSONDecodeError as e:
@@ -240,6 +302,14 @@ def get_session_service() -> InMemorySessionService:
     if _session_service is None:
         _session_service = InMemorySessionService()
     return _session_service
+
+
+def reset_agent():
+    """Reset cached agent/runner/session to pick up new environment variables."""
+    global _session_service, _runner, _agent
+    _session_service = None
+    _runner = None
+    _agent = None
 
 
 def _init_env():

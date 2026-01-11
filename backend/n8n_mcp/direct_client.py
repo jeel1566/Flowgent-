@@ -1,6 +1,7 @@
 """Direct n8n API Client - uses user-provided credentials."""
 import httpx
 import logging
+import json
 from typing import Optional, Dict, List, Any
 
 logger = logging.getLogger(__name__)
@@ -9,8 +10,17 @@ logger = logging.getLogger(__name__)
 class DirectN8nClient:
     """Client for direct n8n API calls using user-provided credentials."""
     
-    def __init__(self, instance_url: str, api_key: str):
-        self.instance_url = instance_url.rstrip('/')
+    def __init__(self, base_url: str, api_key: str):
+        """Initialize client."""
+        # Clean the base URL
+        cleaned_url = base_url.strip().rstrip('/')
+        # Remove /workflow/ or /canvas/... if user pasted a deep link
+        if "/workflow" in cleaned_url:
+            cleaned_url = cleaned_url.split("/workflow")[0]
+        if "/canvas" in cleaned_url:
+            cleaned_url = cleaned_url.split("/canvas")[0]
+            
+        self.instance_url = cleaned_url
         self.api_key = api_key
         self.base_url = f"{self.instance_url}/api/v1"
         self.headers = {
@@ -23,6 +33,8 @@ class DirectN8nClient:
         async with httpx.AsyncClient(timeout=30.0) as client:
             url = f"{self.base_url}{endpoint}"
             logger.debug(f"n8n API: {method} {url}")
+            
+            logger.info(f"DirectClient requesting: {method} {url}")
             
             try:
                 response = await client.request(
@@ -54,10 +66,17 @@ class DirectN8nClient:
             "name": name,
             "nodes": nodes,
             "connections": connections,
-            "active": False,
             "settings": {}
         }
-        return await self._request("POST", "/workflows", json=workflow_data)
+        logger.info(f"Creating workflow '{name}' with {len(nodes)} nodes")
+        logger.debug(f"Workflow payload: {json.dumps(workflow_data, indent=2)}")
+        
+        try:
+            return await self._request("POST", "/workflows", json=workflow_data)
+        except Exception as e:
+            logger.error(f"Failed to create workflow: {e}")
+            logger.error(f"Payload was: {json.dumps(workflow_data)}")
+            raise
     
     async def update_workflow(self, workflow_id: str, updates: Dict[str, Any]) -> Dict[str, Any]:
         """Update an existing workflow."""

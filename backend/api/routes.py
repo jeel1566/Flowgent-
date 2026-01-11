@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Query, Header
-from typing import List, Optional
+from typing import List, Optional, Dict
 import logging
 from models.schemas import (
     ChatMessage, ChatResponse, WorkflowListItem, Workflow,
@@ -8,10 +8,13 @@ from models.schemas import (
 )
 from agent.flowgent_agent import chat_with_agent
 from agent.context import set_n8n_credentials, clear_n8n_credentials
-from n8n_mcp.n8n_client import get_mcp_client
+from n8n_mcp.n8n_client import get_mcp_client, N8nMcpClient
 from n8n_mcp.direct_client import create_n8n_client
 
 logger = logging.getLogger(__name__)
+
+# Cache for node info to improve performance and reduce API/LLM calls
+NODE_INFO_CACHE: Dict[str, NodeInfo] = {}
 router = APIRouter(prefix="/api", tags=["api"])
 
 
@@ -234,9 +237,16 @@ async def execute_workflow(req: ExecutionRequest):
 async def get_node_info(node_type: str):
     """Get detailed information about an n8n node type."""
     try:
+        # Check cache first
+        if node_type in NODE_INFO_CACHE:
+            logger.info(f"Using cached info for: {node_type}")
+            return NODE_INFO_CACHE[node_type]
+
         logger.info(f"Getting node info for: {node_type}")
         client = get_mcp_client()
         info = await client.get_node_info(node_type)
+        
+        result = None
         
         if info:
             logger.info(f"Successfully retrieved node info for {node_type}")
@@ -252,7 +262,7 @@ async def get_node_info(node_type: str):
                 use_cases = []
                 best_practices = []
             
-            return NodeInfo(
+            result = NodeInfo(
                 node_type=node_type,
                 display_name=display_name,
                 description=description,
@@ -261,23 +271,29 @@ async def get_node_info(node_type: str):
                 best_practices=best_practices if isinstance(best_practices, list) else [],
                 example_config=None
             )
+        else:
+            logger.warning(f"No MCP info for {node_type}, falling back to AI")
+            # Fall back to AI-generated info
+            response = await chat_with_agent(
+                f"Provide a brief description and 2-3 use cases for the n8n node type: {node_type}. Be concise.",
+                session_id="node_info_session"
+            )
+            
+            result = NodeInfo(
+                node_type=node_type,
+                display_name=node_type.split(".")[-1].replace("-", " ").title(),
+                description=response,
+                parameters=[],
+                use_cases=[],
+                best_practices=[],
+                example_config=None
+            )
         
-        logger.warning(f"No MCP info for {node_type}, falling back to AI")
-        # Fall back to AI-generated info
-        response = await chat_with_agent(
-            f"Provide a brief description and 2-3 use cases for the n8n node type: {node_type}. Be concise.",
-            session_id="node_info_session"
-        )
-        
-        return NodeInfo(
-            node_type=node_type,
-            display_name=node_type.split(".")[-1].replace("-", " ").title(),
-            description=response,
-            parameters=[],
-            use_cases=[],
-            best_practices=[],
-            example_config=None
-        )
+        # Cache the result
+        if result:
+            NODE_INFO_CACHE[node_type] = result
+            return result
+            
     except Exception as e:
         logger.error(f"Failed to get node info for {node_type}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to retrieve node info: {str(e)}")
