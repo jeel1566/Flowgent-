@@ -74,9 +74,12 @@ const Chat = {
 
         const messageDiv = document.createElement('div');
         messageDiv.className = `message ${role}`;
+        messageDiv.setAttribute('role', 'article');
+        messageDiv.setAttribute('aria-label', `${role} message`);
 
         const avatar = document.createElement('div');
         avatar.className = 'message-avatar';
+        avatar.setAttribute('aria-hidden', 'true');
         avatar.textContent = role === 'user' ? 'U' : '✨';
 
         const contentDiv = document.createElement('div');
@@ -91,8 +94,8 @@ const Chat = {
 
         messagesContainer.appendChild(messageDiv);
 
-        // Scroll to bottom
-        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        // Scroll to bottom smoothly
+        messageDiv.scrollIntoView({ behavior: 'smooth', block: 'end' });
 
         this.messages.push({ role, content });
     },

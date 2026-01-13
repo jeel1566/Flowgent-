@@ -118,7 +118,7 @@
 
           <div class="setting-group">
             <label for="backendUrl">Backend URL</label>
-            <input type="text" id="backendUrl" placeholder="http://localhost:8000" class="setting-input" />
+            <input type="text" id="backendUrl" placeholder="http://localhost:8000" class="setting-input" autocomplete="url" />
             <p class="setting-description">URL of the Flowgent backend server</p>
           </div>
 
@@ -129,13 +129,13 @@
 
           <div class="setting-group">
             <label for="n8nInstanceUrl">n8n Instance URL</label>
-            <input type="text" id="n8nInstanceUrl" placeholder="https://your-n8n.app.n8n.cloud" class="setting-input" />
+            <input type="text" id="n8nInstanceUrl" placeholder="https://your-n8n.app.n8n.cloud" class="setting-input" autocomplete="url" />
             <p class="setting-description">Your n8n instance URL (without /api/v1)</p>
           </div>
 
           <div class="setting-group">
             <label for="n8nApiKey">n8n API Key</label>
-            <input type="password" id="n8nApiKey" placeholder="Enter your n8n API key" class="setting-input" />
+            <input type="password" id="n8nApiKey" placeholder="Enter your n8n API key" class="setting-input" autocomplete="off" />
             <p class="setting-description">Get this from n8n Settings → API → Create API Key</p>
           </div>
 
@@ -143,8 +143,8 @@
             <label>Connection Status</label>
             <div class="connection-test">
               <div id="connectionDetails" class="connection-details">
-                <span class="status-indicator"></span>
-                <span id="connectionInfo">Not tested</span>
+                <span class="status-indicator" role="img" aria-label="Connection status"></span>
+                <span id="connectionInfo" aria-live="polite">Not tested</span>
               </div>
               <button id="testConnection" class="button-secondary">Test Connection</button>
             </div>

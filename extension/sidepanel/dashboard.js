@@ -39,14 +39,14 @@ const Dashboard = {
             });
         } catch (error) {
             console.error('Failed to load workflows:', error);
-            let errorMessage = error.message;
+            let errorMessage = error.message || 'Unknown error';
             
             // Provide helpful error messages
-            if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+            if (error.message?.includes('Failed to fetch') || error.message?.includes('NetworkError')) {
                 errorMessage = 'Cannot connect to backend. Is it running?';
-            } else if (error.message.includes('401') || error.message.includes('403')) {
+            } else if (error.message?.includes('401') || error.message?.includes('403')) {
                 errorMessage = 'Authentication failed. Check your n8n credentials in Settings.';
-            } else if (error.message.includes('500')) {
+            } else if (error.message?.includes('500')) {
                 errorMessage = 'Backend error. Check backend logs for details.';
             }
             
