@@ -54,6 +54,7 @@ class FlowgentAPI {
             method: options.method || 'GET',
             headers: {
                 'Content-Type': 'application/json',
+                'X-Extension-Version': chrome.runtime.getManifest().version,
                 ...options.headers
             },
             ...options
@@ -67,12 +68,21 @@ class FlowgentAPI {
             const response = await fetch(url, config);
 
             if (!response.ok) {
-                throw new Error(`API error: ${response.status} ${response.statusText}`);
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(`API error: ${response.status} - ${errorData.detail || response.statusText}`);
             }
 
             return await response.json();
         } catch (error) {
             console.error('API request failed:', error);
+            
+            // Handle specific error types
+            if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+                throw new Error('Network error: Cannot connect to backend. Check if the server is running.');
+            } else if (error.message.includes('timeout')) {
+                throw new Error('Request timeout: The server took too long to respond.');
+            }
+            
             throw error;
         }
     }

@@ -3,17 +3,33 @@
  */
 
 document.addEventListener('DOMContentLoaded', async () => {
-    // Initialize all components
-    Chat.init();
-    Dashboard.init();
-    Settings.init();
+    try {
+        // Initialize all components
+        Chat.init();
+        Dashboard.init();
+        Settings.init();
 
-    // Tab switching
-    setupTabs();
+        // Tab switching
+        setupTabs();
 
-    // Check connection status on load
-    checkConnectionStatus();
+        // Check connection status on load
+        checkConnectionStatus();
+    } catch (error) {
+        console.error('Failed to initialize app:', error);
+        
+        // Show user-friendly error message
+        showInitializationError('Failed to initialize Flowgent. Please try refreshing the extension.');
+    }
 });
+
+function showInitializationError(message) {
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'error error-banner';
+    errorDiv.textContent = message;
+    
+    const container = document.querySelector('.container') || document.body;
+    container.insertBefore(errorDiv, container.firstChild);
+}
 
 function setupTabs() {
     const tabButtons = document.querySelectorAll('.tab-button');
